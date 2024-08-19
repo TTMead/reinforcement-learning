@@ -1,0 +1,6 @@
+# Ignore generated models
+logs/
+models/
+
+# Ignore hugging face upload generation files
+hub/
