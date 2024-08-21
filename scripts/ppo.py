@@ -13,6 +13,10 @@ import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
+from mlagents_envs.environment import UnityEnvironment
+from mlagents_envs.environment import ActionTuple
+from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
+from unity_gymnasium_env import UnityToGymWrapper
 
 @dataclass
 class Args:
@@ -83,19 +87,29 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
 
+def make_unity_env(editor_timescale):
+    config_channel = EngineConfigurationChannel()
+    print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
+    env = UnityEnvironment(seed=1, side_channels=[config_channel])
+    config_channel.set_configuration_parameters(time_scale=editor_timescale)
+    env.reset()
+    return env
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
     def thunk():
+        timescale = 10.0
+        unity_env = make_unity_env(timescale)
+        env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
         if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
+            # env = gym.make(env_id, render_mode="rgb_array")
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
+        # else:
+            # env = gym.make(env_id)
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
         env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
         return env
