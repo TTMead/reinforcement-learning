@@ -35,16 +35,12 @@ class Args:
     wandb_entity: str = None
     """the entity (team) of wandb's project"""
     capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
+    """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
-    upload_model: bool = False
-    """whether to upload the saved model to huggingface"""
-    hf_entity: str = ""
-    """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str = "HalfCheetah-v4"
+    env_id: str = "unity"
     """the id of the environment"""
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""
@@ -87,7 +83,7 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
 
-def make_unity_env(editor_timescale):
+def make_unity_env(editor_timescale) -> UnityEnvironment:
     config_channel = EngineConfigurationChannel()
     print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
     env = UnityEnvironment(seed=1, side_channels=[config_channel])
@@ -97,14 +93,16 @@ def make_unity_env(editor_timescale):
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
     def thunk():
-        timescale = 10.0
-        unity_env = make_unity_env(timescale)
-        env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
-        if capture_video and idx == 0:
-            # env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # else:
-            # env = gym.make(env_id)
+        if (env_id == "unity"):
+            timescale = 10.0
+            unity_env = make_unity_env(timescale)
+            env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
+        else:
+            if capture_video and idx == 0:
+                env = gym.make(env_id, render_mode="rgb_array")
+                env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+            else:
+                env = gym.make(env_id)
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -355,13 +353,6 @@ if __name__ == "__main__":
         )
         for idx, episodic_return in enumerate(episodic_returns):
             writer.add_scalar("eval/episodic_return", episodic_return, idx)
-
-        if args.upload_model:
-            from cleanrl_utils.huggingface import push_to_hub
-
-            repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
-            repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
-            push_to_hub(args, episodic_returns, repo_id, "PPO", f"runs/{run_name}", f"videos/{run_name}-eval")
 
     envs.close()
     writer.close()
