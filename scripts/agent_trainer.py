@@ -20,12 +20,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import tyro
-from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 from ppo_agent import PpoAgent
 
 from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.environment import ActionTuple
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from unity_gymnasium_env import UnityToGymWrapper
 
