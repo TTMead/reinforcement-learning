@@ -1,6 +1,18 @@
+"""
+Developed under the '2023 QDSA Collaborative Research Grant'.
+
+Ownership is subject to the terms of the relevant QDSA Research Agreement.
+
+The reproduction, distribution and utilization of this file as well as the 
+communication of its contents to others without express authorization is 
+prohibited. Offenders will be held liable for the payment of damages.
+"""
+
 '''
-Custom Gym environment
-https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/
+Custom Gymnasium environment wrapper for Unity3D mlagent_env environments.
+
+Gymnasium environment reference: https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/
+ml-agents LLAPI reference: https://github.com/Unity-Technologies/ml-agents/blob/release_20_docs/docs/Python-LLAPI.md
 '''
 import gymnasium as gym
 from gymnasium import logger
