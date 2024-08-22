@@ -9,7 +9,7 @@ prohibited. Offenders will be held liable for the payment of damages.
 """
 
 '''
-Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py.
+Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py
 '''
 
 import os
@@ -312,11 +312,14 @@ if __name__ == "__main__":
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
+    envs.close()
+
     if args.save_model:
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
-        print(f"model saved to {model_path}")
-        from cleanrl_utils.evals.ppo_eval import evaluate
+        print()
+        print(f"Model saved to {model_path}, beginning evaluation ...")
+        from evals.ppo_eval import evaluate
 
         episodic_returns = evaluate(
             model_path,
@@ -331,5 +334,4 @@ if __name__ == "__main__":
         for idx, episodic_return in enumerate(episodic_returns):
             writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-    envs.close()
     writer.close()
