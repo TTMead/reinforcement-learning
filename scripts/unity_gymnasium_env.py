@@ -159,7 +159,7 @@ class UnityToGymWrapper(gym.Env):
                 list_spaces.append(spaces.Box(0, 1, dtype=np.float32, shape=shape))
         if self._get_vec_obs_size() > 0:
             # vector observation is last
-            high = np.array([np.inf] * self._get_vec_obs_size())
+            high = np.array([np.inf] * self._get_vec_obs_size(), dtype=np.float32)
             list_spaces.append(spaces.Box(-high, high, dtype=np.float32))
         if self._allow_multiple_obs:
             self.observation_space = spaces.Tuple(list_spaces)
