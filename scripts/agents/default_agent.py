@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 
-class PpoAgent(nn.Module):
+class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(

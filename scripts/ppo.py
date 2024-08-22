@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
-from agents.ppo_agent import PpoAgent
+from agents.default_agent import Agent
 
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = PpoAgent(envs).to(device)
+    agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
@@ -320,7 +320,7 @@ if __name__ == "__main__":
             args.env_id,
             eval_episodes=10,
             run_name=f"{run_name}-eval",
-            Model=PpoAgent,
+            Model=Agent,
             device=device,
             gamma=args.gamma,
         )

@@ -14,7 +14,7 @@ The PPO training algorithm is branched from the
 agents with custom network topologies, defined in the `scripts/agents/` directory.
 To use the trainer, install the `requirements.txt` into a local Python `venv` and run,
 ```bash
-python scripts/ppo_trainer.py
+python scripts/ppo.py
 ```
 
 This repository also contains a `UnityToGymWrapper` that wraps a Unity3D 
