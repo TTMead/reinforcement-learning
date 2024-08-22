@@ -11,7 +11,8 @@ prohibited. Offenders will be held liable for the payment of damages.
 '''
 Custom Gymnasium environment wrapper for Unity3D mlagent_env environments.
 
-Gymnasium environment reference: https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/
+Gymnasium API reference: https://gymnasium.farama.org/api/env/
+Gymnasium environment example: https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/
 ml-agents LLAPI reference: https://github.com/Unity-Technologies/ml-agents/blob/release_20_docs/docs/Python-LLAPI.md
 '''
 import gymnasium as gym
@@ -27,24 +28,18 @@ from mlagents_envs.base_env import DecisionSteps, TerminalSteps
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+
+
 # Register this module as a gym environment. Once registered, the id is usable in gym.make().
 register(
     id='unity-env-v0',
     entry_point='unity_gymnasium_env:UnityToGymWrapper',
 )
 
-class UnityGymException(error.Error):
-    """
-    Any error related to the gym wrapper of ml-agents.
-    """
-    pass
-
-GymStepResult = Tuple[np.ndarray, float, bool, Dict]
+GymStepResult = Tuple[np.ndarray, float, bool, bool, Dict]
 
 
 
-# Implement our own gym env, must inherit from gym.Env
-# https://gymnasium.farama.org/api/env/
 class UnityToGymWrapper(gym.Env):
     # metadata is a required attribute
     # render_modes in our environment is either None or 'human'.
@@ -172,7 +167,7 @@ class UnityToGymWrapper(gym.Env):
             self.observation_space = list_spaces[0]  # only return the first one
     
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None, options=None) -> Tuple[np.ndarray, Dict]:
         """Resets the state of the environment and returns an initial observation.
         Returns: observation (object/list): the initial observation of the
         space.
@@ -184,42 +179,12 @@ class UnityToGymWrapper(gym.Env):
         n_agents = len(decision_step)
         self._check_agents(n_agents)
 
-        # Construct the observation state
-        res: GymStepResult = self._single_step(decision_step)
-        obs = res[0]
+        # Construct the observation state by performing a step
+        step_result: GymStepResult = self._single_step(decision_step)
+        obs = step_result[0]
 
-        # Additional info to return. For debugging or whatever.
         info = {}
-
         return obs, info
-
-
-    # Gym required function (and parameters) to perform an action
-    def step(self, action):
-        # Perform action
-        target_reached = self.warehouse_robot.perform_action(wr.RobotAction(action))
-
-        # Determine reward and termination
-        reward=0
-        terminated=False
-        if target_reached:
-            reward=1
-            terminated=True
-
-        # Construct the observation state: 
-        # [robot_row_pos, robot_col_pos, target_row_pos, target_col_pos]
-        obs = np.concatenate((self.warehouse_robot.robot_pos, self.warehouse_robot.target_pos))
-
-        # Additional info to return. For debugging or whatever.
-        info = {}
-
-        # Render environment
-        if(self.render_mode=='human'):
-            print(wr.RobotAction(action))
-            self.render()
-
-        # Return observation, reward, terminated, truncated (not used), info
-        return obs, reward, terminated, False, info
 
 
     def step(self, action: List[Any]) -> GymStepResult:
@@ -259,7 +224,7 @@ class UnityToGymWrapper(gym.Env):
             return self._single_step(decision_step)
     
 
-    def render(self, mode="rgb_array"):
+    def render(self, mode="rgb_array") -> List[np.ndarray]:
         """
         Return the latest visual observations.
         Note that it will not render a new frame of the environment.
@@ -320,18 +285,14 @@ class UnityToGymWrapper(gym.Env):
                 result.append(obs_spec.shape)
         return result
 
-    def _get_vis_obs_list(
-        self, step_result: Union[DecisionSteps, TerminalSteps]
-    ) -> List[np.ndarray]:
+    def _get_vis_obs_list(self, step_result: Union[DecisionSteps, TerminalSteps]) -> List[np.ndarray]:
         result: List[np.ndarray] = []
         for obs in step_result.obs:
             if len(obs.shape) == 4:
                 result.append(obs)
         return result
     
-    def _get_vector_obs(
-        self, step_result: Union[DecisionSteps, TerminalSteps]
-    ) -> np.ndarray:
+    def _get_vector_obs(self, step_result: Union[DecisionSteps, TerminalSteps]) -> np.ndarray:
         result: List[np.ndarray] = []
         for obs in step_result.obs:
             if len(obs.shape) == 2:
@@ -351,6 +312,7 @@ class UnityToGymWrapper(gym.Env):
             raise UnityGymException(
                 f"There can only be one Agent in the environment but {n_agents} were detected."
             )
+
 
 
 class ActionFlattener:
@@ -390,6 +352,14 @@ class ActionFlattener:
         :returns: The List containing the branched actions.
         """
         return self.action_lookup[action]
+
+
+
+class UnityGymException(error.Error):
+    """
+    Any error related to the gym wrapper of ml-agents.
+    """
+    pass
 
 
 

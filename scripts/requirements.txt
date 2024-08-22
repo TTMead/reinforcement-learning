@@ -22,7 +22,7 @@ Markdown==3.7
 markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mdurl==0.1.2
--e git+ssh://git@github.com/TTMead/reinforcement-learning.git@1bcadcb2d03353987784e5d1a602afc2f97d7a15#egg=mlagents_envs
+mlagents_envs==1.0.0
 moviepy==1.0.3
 mpmath==1.3.0
 mujoco==3.2.2
