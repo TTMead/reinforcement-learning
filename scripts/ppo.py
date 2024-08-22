@@ -48,10 +48,12 @@ class Args:
     """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
+    time_scale: float = 20.0
+    """for Unity environments, sets the simulator timescale"""
 
     # Algorithm specific arguments
     env_id: str = "unity"
-    """the id of the environment"""
+    """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
@@ -101,11 +103,10 @@ def make_unity_env(editor_timescale) -> UnityEnvironment:
     env.reset()
     return env
 
-def make_env(env_id, idx, capture_video, run_name, gamma):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
     def thunk():
         if (env_id == "unity"):
-            timescale = 10.0
-            unity_env = make_unity_env(timescale)
+            unity_env = make_unity_env(time_scale)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
         else:
             if capture_video and idx == 0:
@@ -160,7 +161,7 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+        [make_env(args.env_id, i, args.capture_video, run_name, args.time_scale, args.gamma) for i in range(args.num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
