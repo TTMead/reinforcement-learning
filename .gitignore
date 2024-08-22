@@ -139,3 +139,7 @@ ui-tests/.pnp.*
 # Ignore Python virtual environments
 venv/
 env/
+
+# Ignore ClearnRL generated artifacts
+runs/
+videos/
