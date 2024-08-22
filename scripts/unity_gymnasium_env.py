@@ -103,7 +103,7 @@ class UnityToGymWrapper(gym.Env):
         else:
             self.uint8_visual = uint8_visual
         if (
-            self._get_n_vis_obs() + self._get_vec_obs_size() >= 2
+            self._get_n_vis_obs() + int(self._get_vec_obs_size() != 0) >= 2
             and not self._allow_multiple_obs
         ):
             logger.warn(
@@ -272,6 +272,7 @@ class UnityToGymWrapper(gym.Env):
             return single_visual_obs
 
     def _get_n_vis_obs(self) -> int:
+        """Returns the number of Visual Observations"""
         result = 0
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 3:
@@ -300,6 +301,7 @@ class UnityToGymWrapper(gym.Env):
         return np.concatenate(result, axis=1)
     
     def _get_vec_obs_size(self) -> int:
+        """Returns the number of Floats in the Vector Observation"""
         result = 0
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 1:
