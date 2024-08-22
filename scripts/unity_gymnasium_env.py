@@ -280,25 +280,12 @@ class UnityToGymWrapper(gym.Env):
         return result
     
     def _get_vis_obs_shape(self) -> List[Tuple]:
+        """Returns a list with the shapes of every Visual Observation"""
         result: List[Tuple] = []
         for obs_spec in self.group_spec.observation_specs:
             if len(obs_spec.shape) == 3:
                 result.append(obs_spec.shape)
         return result
-
-    def _get_vis_obs_list(self, step_result: Union[DecisionSteps, TerminalSteps]) -> List[np.ndarray]:
-        result: List[np.ndarray] = []
-        for obs in step_result.obs:
-            if len(obs.shape) == 4:
-                result.append(obs)
-        return result
-    
-    def _get_vector_obs(self, step_result: Union[DecisionSteps, TerminalSteps]) -> np.ndarray:
-        result: List[np.ndarray] = []
-        for obs in step_result.obs:
-            if len(obs.shape) == 2:
-                result.append(obs)
-        return np.concatenate(result, axis=1)
     
     def _get_vec_obs_size(self) -> int:
         """Returns the number of Floats in the Vector Observation"""
@@ -307,6 +294,24 @@ class UnityToGymWrapper(gym.Env):
             if len(obs_spec.shape) == 1:
                 result += obs_spec.shape[0]
         return result
+
+    @staticmethod
+    def _get_vis_obs_list(step_result: Union[DecisionSteps, TerminalSteps]) -> List[np.ndarray]:
+        """Returns a list of every Visual Observation for the given step_result"""
+        result: List[np.ndarray] = []
+        for obs in step_result.obs:
+            if len(obs.shape) == 4:
+                result.append(obs)
+        return result
+    
+    @staticmethod
+    def _get_vector_obs(step_result: Union[DecisionSteps, TerminalSteps]) -> np.ndarray:
+        """Returns a list of every Vector Observation for the given step_result"""
+        result: List[np.ndarray] = []
+        for obs in step_result.obs:
+            if len(obs.shape) == 2:
+                result.append(obs)
+        return np.concatenate(result, axis=1)    
 
     @staticmethod
     def _check_agents(n_agents: int) -> None:
