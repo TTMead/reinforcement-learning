@@ -12,11 +12,11 @@ prohibited. Offenders will be held liable for the payment of damages.
 Branched from CleanRL ppo_eval.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl_utils/evals/ppo_eval.py
 '''
 
-from typing import Callable
+from typing import Callable, Optional
+from dataclasses import dataclass
 
 import gymnasium as gym
 import torch
-
 
 def evaluate(
     model_path: str,
@@ -50,18 +50,34 @@ def evaluate(
 
     return episodic_returns
 
+@dataclass
+class Args:
+    model_path: Optional[str]
+    env_id: str = "unity"
+
 
 if __name__ == "__main__":
-    from huggingface_hub import hf_hub_download
+    import sys, os
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(parent_dir)
+    
     from ppo import Agent, make_env
+    import tyro
 
-    model_path = hf_hub_download(
-        repo_id="sdpkjc/Hopper-v4-ppo_continuous_action-seed1", filename="ppo_continuous_action.cleanrl_model"
-    )
+    args = tyro.cli(Args)
+
+    if (args.model_path):
+        model_path = args.model_path
+    else:
+        from huggingface_hub import hf_hub_download
+        model_path = hf_hub_download(
+            repo_id="sdpkjc/Hopper-v4-ppo_continuous_action-seed1", filename="ppo_continuous_action.cleanrl_model"
+        )
+    
     evaluate(
         model_path,
         make_env,
-        "Hopper-v4",
+        args.env_id,
         eval_episodes=10,
         run_name=f"eval",
         Model=Agent,
