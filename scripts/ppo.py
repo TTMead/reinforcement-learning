@@ -31,6 +31,8 @@ from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from unity_gymnasium_env import UnityToGymWrapper
 
+from normalize import NormalizeObservation
+
 @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
@@ -63,15 +65,15 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    num_steps: int = 2048
+    num_steps: int = 1024
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
-    gamma: float = 0.99
+    gamma: float = 0.999
     """the discount factor gamma"""
-    gae_lambda: float = 0.95
+    gae_lambda: float = 0.98
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 32
+    num_minibatches: int = 64
     """the number of mini-batches"""
     update_epochs: int = 10
     """the K epochs to update the policy"""
@@ -81,7 +83,7 @@ class Args:
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.0
+    ent_coef: float = 0.01
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
@@ -106,7 +108,7 @@ def make_unity_env(editor_timescale) -> UnityEnvironment:
     env.reset()
     return env
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, observation_mean = None, observation_var = None):
     def thunk():
         if (env_id == "unity"):
             unity_env = make_unity_env(time_scale)
@@ -120,7 +122,7 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
+        env = NormalizeObservation(env, mean=observation_mean, var=observation_var)
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
@@ -318,20 +320,12 @@ if __name__ == "__main__":
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
         print()
-        print(f"Model saved to {model_path}, beginning evaluation ...")
-        from evals.ppo_eval import evaluate
+        print(f"Model saved to {model_path}")
 
-        episodic_returns = evaluate(
-            model_path,
-            make_env,
-            args.env_id,
-            eval_episodes=10,
-            run_name=f"{run_name}-eval",
-            Model=Agent,
-            device=device,
-            gamma=args.gamma,
-        )
-        for idx, episodic_return in enumerate(episodic_returns):
-            writer.add_scalar("eval/episodic_return", episodic_return, idx)
+        import pickle 
+        metadata_path = f"runs/{run_name}/{args.exp_name}_env_metadata.pkl"
+        with open(metadata_path, 'wb') as metadata_file:
+            pickle.dump(envs.metadata, metadata_file)
+        print(f"Metadata saved to {metadata_path}")
 
     writer.close()
