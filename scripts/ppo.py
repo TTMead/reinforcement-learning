@@ -31,7 +31,7 @@ from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from unity_gymnasium_env import UnityToGymWrapper
 
-from normalize import NormalizeObservation
+from normalize import MinMaxNormalizeObservation
 
 @dataclass
 class Args:
@@ -108,7 +108,7 @@ def make_unity_env(editor_timescale) -> UnityEnvironment:
     env.reset()
     return env
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, observation_mean = None, observation_var = None):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
     def thunk():
         if (env_id == "unity"):
             unity_env = make_unity_env(time_scale)
@@ -122,7 +122,7 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, observatio
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
-        env = NormalizeObservation(env, mean=observation_mean, var=observation_var)
+        env = MinMaxNormalizeObservation(env, Agent.get_observation_range())
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
@@ -319,13 +319,12 @@ if __name__ == "__main__":
     if args.save_model:
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
-        print()
-        print(f"Model saved to {model_path}")
+        print(f"\nModel saved to {model_path}")
 
         import pickle 
         metadata_path = f"runs/{run_name}/{args.exp_name}_env_metadata.pkl"
         with open(metadata_path, 'wb') as metadata_file:
             pickle.dump(envs.metadata, metadata_file)
-        print(f"Metadata saved to {metadata_path}")
+        print(f"Metadata saved to {metadata_path}\n")
 
     writer.close()

@@ -9,6 +9,7 @@ prohibited. Offenders will be held liable for the payment of damages.
 """
 
 import numpy as np
+import math
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
@@ -43,6 +44,20 @@ class Agent(nn.Module):
         if action is None:
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+
+    @staticmethod
+    def get_observation_range():
+        return np.array([
+            [-6, 6],
+            [0, 0.5],
+            [-6, 6],
+            [-6, 6],
+            [0, 0.5],
+            [-6, 6],
+            [-math.pi, math.pi],
+            [-2.1, 2.1],
+            [-2.2, 2.2]
+        ])
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)

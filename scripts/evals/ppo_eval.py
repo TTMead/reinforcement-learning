@@ -24,10 +24,10 @@ sys.path.append(parent_dir)
 
 from unity_gymnasium_env import UnityToGymWrapper
 from ppo import Agent, make_unity_env
-from normalize import StaticNormalizeObservation
+from normalize import MinMaxNormalizeObservation
 import numpy as np
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, observation_mean, observation_var):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
     def thunk():
         if (env_id == "unity"):
             unity_env = make_unity_env(time_scale)
@@ -41,7 +41,7 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, observatio
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
-        env = StaticNormalizeObservation(env, observation_mean, observation_var)
+        env = MinMaxNormalizeObservation(env, Agent.get_observation_range())
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
@@ -56,30 +56,11 @@ def evaluate(
     Model: torch.nn.Module,
     device: torch.device = torch.device("cpu"),
     capture_video: bool = True,
-    gamma: float = 0.99,
-    metadata_path: str = None
+    gamma: float = 0.99
 ):
     # Create gym environment
     time_scale = 2.0
-    if (metadata_path):
-        # If metadata is provided, load in the saved mean/std
-        import pickle
-        with open(metadata_path, 'rb') as metadata_file:
-            env_metadata = pickle.load(metadata_file)
-
-            print(env_metadata["observation_mean"])
-            print(env_metadata["observation_var"])
-
-            assert (env_metadata["observation_mean"] is not None), "Metadata does not contain observation mean"
-            assert (env_metadata["observation_var"] is not None), "Metadata does not contain observation variance"
-
-            mean = env_metadata["observation_mean"]
-            var = env_metadata["observation_var"]
-    else:
-        mean = [-0.28141704,0.25,1.02541261,0.05212049,0.26647945,-0.17269537,-0.1262586,-0.4684438,0.02271854]
-        var = [6.51560695e+00,1.04929981e-09,5.42513869e+00,1.62295415e+00,2.75232264e-04,1.70809007e+00,6.15432472e+00,9.77105898e-01,8.06864739e-01]
-
-    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, capture_video, run_name, time_scale, gamma, mean, var)])
+    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, capture_video, run_name, time_scale, gamma)])
 
     # Load model weights from disk
     agent = Model(envs).to(device)
@@ -105,7 +86,6 @@ def evaluate(
 @dataclass
 class Args:
     model_path: Optional[str]
-    metadata_path: Optional[str] = None
     env_id: str = "unity"
 
 
@@ -124,10 +104,9 @@ if __name__ == "__main__":
     evaluate(
         model_path,
         args.env_id,
-        eval_episodes=50,
+        eval_episodes=10000,
         run_name=f"eval",
         Model=Agent,
         device="cpu",
-        capture_video=False,
-        metadata_path=args.metadata_path
+        capture_video=False
     )
