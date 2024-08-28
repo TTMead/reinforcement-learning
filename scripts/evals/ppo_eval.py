@@ -23,30 +23,9 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
 from unity_gymnasium_env import UnityToGymWrapper
-from ppo import Agent, make_unity_env
+from ppo import Agent, make_env
 from normalize import MinMaxNormalizeObservation
 import numpy as np
-
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
-    def thunk():
-        if (env_id == "unity"):
-            unity_env = make_unity_env(time_scale)
-            env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
-        else:
-            if capture_video and idx == 0:
-                env = gym.make(env_id, render_mode="rgb_array")
-                env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-            else:
-                env = gym.make(env_id)
-        env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = MinMaxNormalizeObservation(env, Agent.get_observation_range())
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        return env
-    return thunk
 
 def evaluate(
     model_path: str,
@@ -56,11 +35,11 @@ def evaluate(
     Model: torch.nn.Module,
     device: torch.device = torch.device("cpu"),
     capture_video: bool = True,
-    gamma: float = 0.99
+    gamma: float = 0.99,
+    timescale: float = 1.0
 ):
     # Create gym environment
-    time_scale = 2.0
-    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, capture_video, run_name, time_scale, gamma)])
+    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, capture_video, run_name, timescale, gamma)])
 
     # Load model weights from disk
     agent = Model(envs).to(device)
@@ -86,7 +65,13 @@ def evaluate(
 @dataclass
 class Args:
     model_path: Optional[str]
+    """the path of the model weights to load in for evaluation. Will download a model from huggingface if no path is provided"""
     env_id: str = "unity"
+    """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
+    time_scale: float = 20.0
+    """for Unity environments, sets the simulator timescale"""
+    eval_episodes: int = 100
+    """the number of episodes to run for evaluation"""
 
 
 if __name__ == "__main__":
@@ -104,9 +89,11 @@ if __name__ == "__main__":
     evaluate(
         model_path,
         args.env_id,
-        eval_episodes=10000,
+        eval_episodes=args.eval_episodes,
         run_name=f"eval",
         Model=Agent,
         device="cpu",
-        capture_video=False
+        capture_video=False,
+        gamma=0.99,
+        timescale=args.time_scale
     )
