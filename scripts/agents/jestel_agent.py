@@ -55,7 +55,9 @@ class Agent(nn.Module):
 
     @staticmethod
     def observation_size():
-        return 275 # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
+        observation_size = 275
+        stack_size = 4
+        return (observation_size * stack_size) # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
 
     @staticmethod
     def action_size():

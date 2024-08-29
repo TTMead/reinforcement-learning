@@ -191,9 +191,11 @@ class MinMaxNormalizeObservation(gym.Wrapper, gym.utils.RecordConstructorArgs):
             self.is_vector_env = False
 
         if self.is_vector_env:
-            assert (ranges.shape == (self.single_observation_space.shape[0], 2)), "Normalization range does not match observation shape"
+            assert ((self.single_observation_space.shape[0] % ranges.shape[0]) == 0), ("Normalization range shape (" + str(ranges.shape) + ") is not a multiple of the observation shape (" + str((self.single_observation_space.shape[0], 2)) + ")")
+            self.stack_size = int(self.single_observation_space.shape[0] / ranges.shape[0])
         else:
-            assert (ranges.shape == (self.observation_space.shape[0], 2)), "Normalization range does not match observation shape"
+            assert ((self.observation_space.shape[0] % ranges.shape[0]) == 0), ("Normalization range shape (" + str(ranges.shape) + ") is not a multiple of the observation shape (" + str((self.observation_space.shape[0], 2)) + ")")
+            self.stack_size = int(self.observation_space.shape[0] / ranges.shape[0])
         
         for range in ranges:
             assert (range[0] != range[1]), "Normalization range has the same min and max value."
@@ -223,13 +225,21 @@ class MinMaxNormalizeObservation(gym.Wrapper, gym.utils.RecordConstructorArgs):
         """Normalises the observation between the min and max values to the range of 0 to 1."""
         mins = self.ranges[:,0]
         maxs = self.ranges[:,1]
-        obs_vec = obs[0]
+        obs_stacked_vec = obs[0]
 
-        # Ensure that the observation vector is within the min/max bounds before we normalize
-        for i in range(len(obs_vec)):
-            if (obs_vec[i] <= mins[i]) or (obs_vec[i] >= maxs[i]):
-                warnings.warn("Observation value (" + str(obs_vec[i]) + ") is outside of valid range (" + str(mins[i]) + ", " + str(maxs[i]) + "). Clamping value.")
-                obs_vec[i] = np.clip(obs_vec[i], mins[i], maxs[i])
-        obs[0] = obs_vec
+        for stack in range(self.stack_size):
+            stack_index = (stack * self.ranges.shape[0])
+            obs_vec = obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])]
 
-        return (obs - mins) / (maxs - mins)
+            # Ensure that the observation vector is within the min/max bounds before we normalize
+            for i in range(len(obs_vec)):
+                if (obs_vec[i] <= mins[i]) or (obs_vec[i] >= maxs[i]):
+                    warnings.warn("Observation value (" + str(obs_vec[i]) + ") is outside of valid range (" + str(mins[i]) + ", " + str(maxs[i]) + "). Clamping value.")
+                    obs_vec[i] = np.clip(obs_vec[i], mins[i], maxs[i])
+            
+            # Normalize
+            obs_vec = (obs_vec - mins) / (maxs - mins)
+            obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])] = obs_vec
+        
+        obs[0] = obs_stacked_vec
+        return obs
