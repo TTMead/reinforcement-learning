@@ -14,10 +14,65 @@ Multi-robot Navigation via Deep Reinforcement Learning" (Jestel, et. al.)
 """
 
 import numpy as np
-import math
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
+
+class JestelNetwork(nn.Module):
+    def __init__(self, output_size):
+        super(JestelNetwork, self).__init__()
+        
+        lidar_count = 270
+        self.lidar_stream = nn.Sequential(
+            nn.Conv1d(in_channels=lidar_count, out_channels=16, kernel_size=7, stride=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Linear(32, 256),
+            nn.ReLU(),
+        )
+        
+        self.direction_stream = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.ReLU()
+        )
+
+        self.distance_stream = nn.Sequential(
+            nn.Linear(1, 16),
+            nn.ReLU()
+        )
+
+        self.velocity_stream = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.ReLU()
+        )
+
+        self.output_stream = nn.Sequential(
+            nn.Linear(368, 384),
+            nn.ReLU(),
+            nn.Linear(368, output_size)
+        )
+    
+    def forward(self, o):
+        print()
+        print(o.shape)
+        print()
+
+        # Split observation into components
+        o_l = o[0,0:270]
+        o_g = o[0,271:273]
+        o_d = o[0,274]
+        o_v = o[0,275:277]
+
+        out1 = self.lidar_stream(o_l)
+        out2 = self.direction_stream(o_g)
+        out3 = self.distance_stream(o_d)
+        out4 = self.velocity_stream(o_v)
+        
+        combined = torch.cat((out1, out2, out3, out4), dim=1)
+        output = self.output_stream(combined)
+        
+        return output
 
 class Agent(nn.Module):
     def __init__(self, envs):
@@ -25,20 +80,9 @@ class Agent(nn.Module):
         assert (envs.single_action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(envs.single_action_space.shape))
 
         super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
-        self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01),
-        )
+
+        self.critic = JestelNetwork(output_size=1)
+        self.actor_mean = JestelNetwork(output_size=2)
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
     def get_value(self, x):
