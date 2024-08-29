@@ -8,6 +8,11 @@ communication of its contents to others without express authorization is
 prohibited. Offenders will be held liable for the payment of damages.
 """
 
+"""
+Implementation of the PPO agent network as described by "Obtaining Robust Control and Navigation Policies for 
+Multi-robot Navigation via Deep Reinforcement Learning" (Jestel, et. al.)
+"""
+
 import numpy as np
 import math
 import torch
@@ -16,6 +21,9 @@ from torch.distributions.normal import Normal
 
 class Agent(nn.Module):
     def __init__(self, envs):
+        assert (envs.single_observation_space.shape[0] == Agent.observation_size()), ("The Jestel implementation requires an observation space of " + str(Agent.observation_size()) + " continuous values, received observation of shape: " + str(envs.single_observation_space.shape))
+        assert (envs.single_action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(envs.single_action_space.shape))
+
         super().__init__()
         self.critic = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
@@ -44,6 +52,14 @@ class Agent(nn.Module):
         if action is None:
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+
+    @staticmethod
+    def observation_size():
+        return 279 # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
+
+    @staticmethod
+    def action_size():
+        return 2 # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
 
     @staticmethod
     def get_observation_range():
