@@ -55,7 +55,7 @@ class Agent(nn.Module):
 
     @staticmethod
     def observation_size():
-        return 279 # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
+        return 275 # See "Obtaining Robust Control and Navigation Policies for Multi-robot Navigation via Deep Reinforcement Learning", Jestel et. al
 
     @staticmethod
     def action_size():
@@ -63,25 +63,25 @@ class Agent(nn.Module):
 
     @staticmethod
     def get_observation_range():
-        ranges = np.array([
-            [-6, 6],
-            [0, 0.5],
-            [-6, 6],
-            [-6, 6],
-            [0, 0.5],
-            [-6, 6],
-            [-math.pi, math.pi],
-            [-2.1, 2.1],
-            [-2.2, 2.2]
-        ])
+        ranges = np.empty((0,2))
 
-        # Add LiDAR scans
+        # O_l (LiDAR) scan Ranges
         num_scans = 270
         for i in range(num_scans):
             ranges = np.vstack([ranges, [0, 5]])
 
+        # O_g (direction to goal) scan ranges
+        ranges = np.vstack([ranges, [-1, 1]])
+        ranges = np.vstack([ranges, [-1, 1]])
+
+        # O_d (distance to goal) scan range
+        ranges = np.vstack([ranges, [-20, 20]])
+
+        # O_v (robot velocities) scan ranges
+        ranges = np.vstack([ranges, [-2.1, 2.1]])
+        ranges = np.vstack([ranges, [-2.1, 2.1]])
+
         print(ranges.shape)
-        
         return ranges
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
