@@ -223,23 +223,26 @@ class MinMaxNormalizeObservation(gym.Wrapper, gym.utils.RecordConstructorArgs):
 
     def normalize(self, obs):
         """Normalises the observation between the min and max values to the range of 0 to 1."""
-        mins = self.ranges[:,0]
-        maxs = self.ranges[:,1]
         obs_stacked_vec = obs[0]
 
         for stack in range(self.stack_size):
             stack_index = (stack * self.ranges.shape[0])
-            obs_vec = obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])]
-
-            # Ensure that the observation vector is within the min/max bounds before we normalize
-            for i in range(len(obs_vec)):
-                if (obs_vec[i] <= mins[i]) or (obs_vec[i] >= maxs[i]):
-                    warnings.warn("Observation value (" + str(obs_vec[i]) + ") is outside of valid range (" + str(mins[i]) + ", " + str(maxs[i]) + "). Clamping value.")
-                    obs_vec[i] = np.clip(obs_vec[i], mins[i], maxs[i])
-            
-            # Normalize
-            obs_vec = (obs_vec - mins) / (maxs - mins)
-            obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])] = obs_vec
+            single_observation_vector = obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])]
+            single_observation_vector = self.normalize_single_observation(single_observation_vector)
+            obs_stacked_vec[stack_index:(stack_index + self.ranges.shape[0])] = single_observation_vector
         
         obs[0] = obs_stacked_vec
         return obs
+
+    def normalize_single_observation(self, obs_vec):
+        mins = self.ranges[:,0]
+        maxs = self.ranges[:,1]
+
+        # Ensure that the observation vector is within the min/max bounds before we normalize
+        for i in range(len(obs_vec)):
+            if (obs_vec[i] <= mins[i]) or (obs_vec[i] >= maxs[i]):
+                warnings.warn("Observation value (" + str(obs_vec[i]) + ") is outside of valid range (" + str(mins[i]) + ", " + str(maxs[i]) + "). Clamping value.")
+                obs_vec[i] = np.clip(obs_vec[i], mins[i], maxs[i])
+        
+        # Normalize
+        return (obs_vec - mins) / (maxs - mins)
