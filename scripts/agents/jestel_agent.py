@@ -24,14 +24,16 @@ class JestelNetwork(nn.Module):
         
         lidar_count = 270
         self.lidar_stream = nn.Sequential(
-            nn.Conv1d(in_channels=lidar_count, out_channels=16, kernel_size=7, stride=3, padding=1),
+            nn.Conv1d(in_channels=1, out_channels=16, kernel_size=7, stride=3),
             nn.ReLU(),
-            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2, padding=1),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2),
             nn.ReLU(),
-            nn.Linear(32, 256),
+            nn.Flatten(),
+            nn.Linear(32 * ((((lidar_count - 7) // 3 + 1) - 5) // 2 + 1), 256),
             nn.ReLU(),
+            nn.Flatten(start_dim=0),
         )
-        
+
         self.direction_stream = nn.Sequential(
             nn.Linear(2, 32),
             nn.ReLU()
@@ -47,32 +49,31 @@ class JestelNetwork(nn.Module):
             nn.ReLU()
         )
 
+        output_layer_size = 256+32+16+32
         self.output_stream = nn.Sequential(
-            nn.Linear(368, 384),
+            nn.Linear(output_layer_size, 384),
             nn.ReLU(),
-            nn.Linear(368, output_size)
+            nn.Linear(384, output_size)
         )
     
     def forward(self, o):
-        print()
-        print(o.shape)
-        print()
-
         # Split observation into components
         o_l = o[0,0:270]
         o_g = o[0,271:273]
         o_d = o[0,274]
         o_v = o[0,275:277]
 
-        out1 = self.lidar_stream(o_l)
+        # Create network branches
+        out1 = self.lidar_stream(o_l.unsqueeze(0).unsqueeze(0))
         out2 = self.direction_stream(o_g)
-        out3 = self.distance_stream(o_d)
+        out3 = self.distance_stream(o_d.unsqueeze(0))
         out4 = self.velocity_stream(o_v)
-        
-        combined = torch.cat((out1, out2, out3, out4), dim=1)
+
+        # Concatenate into output hidden layer
+        combined = torch.cat((out1, out2, out3, out4), dim=0)
         output = self.output_stream(combined)
         
-        return output
+        return output.unsqueeze(0)
 
 class Agent(nn.Module):
     def __init__(self, envs):
@@ -127,7 +128,6 @@ class Agent(nn.Module):
         ranges = np.vstack([ranges, [-2.1, 2.1]])
         ranges = np.vstack([ranges, [-2.1, 2.1]])
 
-        print(ranges.shape)
         return ranges
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
