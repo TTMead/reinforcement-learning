@@ -59,9 +59,9 @@ class JestelNetwork(nn.Module):
     def forward(self, o):
         # Split observation into components
         o_l = o[0,0:270]
-        o_g = o[0,271:273]
-        o_d = o[0,274]
-        o_v = o[0,275:277]
+        o_g = o[0,270:272]
+        o_d = o[0,272]
+        o_v = o[0,273:275]
 
         # Create network branches
         out1 = self.lidar_stream(o_l.unsqueeze(0).unsqueeze(0))
