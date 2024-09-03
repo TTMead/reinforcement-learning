@@ -65,13 +65,13 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    num_steps: int = 1024
+    num_steps: int = 4096
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
-    gamma: float = 0.999
+    gamma: float = 0.99
     """the discount factor gamma"""
-    gae_lambda: float = 0.98
+    gae_lambda: float = 0.95
     """the lambda for the general advantage estimation"""
     num_minibatches: int = 64
     """the number of mini-batches"""
@@ -325,9 +325,17 @@ if __name__ == "__main__":
         print(f"\nModel saved to {model_path}")
 
         import pickle 
-        metadata_path = f"runs/{run_name}/{args.exp_name}_env_metadata.pkl"
+        metadata_path = f"runs/{run_name}/env_metadata.pkl"
         with open(metadata_path, 'wb') as metadata_file:
             pickle.dump(envs.metadata, metadata_file)
-        print(f"Metadata saved to {metadata_path}\n")
+
+        import json, dataclasses
+        metadata_path = f"runs/{run_name}/env_metadata.json"
+        json_path = f"runs/{run_name}/args.json"
+        with open(json_path, 'w', encoding='utf-8') as file:
+            json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
+
+        with open(metadata_path, 'w', encoding='utf-8') as file:
+            json.dump(envs.metadata, file, ensure_ascii=False, indent=4)
 
     writer.close()
