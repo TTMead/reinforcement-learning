@@ -55,6 +55,8 @@ class Args:
     """whether to save model into the `runs/{run_name}` folder"""
     time_scale: float = 20.0
     """for Unity environments, sets the simulator timescale"""
+    model_path: Optional[str] = None
+    """if a path is provided, will initialise the agent with the weights/biases of the model"""
 
     # Algorithm specific arguments
     env_id: str = "unity"
@@ -171,6 +173,10 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
+    if (args.model_path):
+        print("Loading pre-existing model from [" + args.model_path + "]")
+        agent.load_state_dict(torch.load(args.model_path, map_location=device))
+
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
