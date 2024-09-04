@@ -56,19 +56,20 @@ class JestelNetwork(nn.Module):
         )
     
     def forward(self, raw_observation):
-        assert (raw_observation.shape == (1, Agent.stacked_observation_size())), "Jestel agent should be receiving a raw observation of shape (1, " + str(Agent.stacked_observation_size()) + ")"
-        observation = raw_observation.reshape(1, Agent.stack_size(), Agent.observation_size())
+        batch_size = raw_observation.shape[0]
+        assert (raw_observation.shape[1] == Agent.stacked_observation_size()), "Jestel agent should receive a raw observation of shape (batch_size, " + str(Agent.stacked_observation_size()) + "), received " + str(raw_observation.shape)
+        observation = raw_observation.reshape(batch_size, Agent.stack_size(), Agent.observation_size())
 
         # Split observation into components
         o_l = observation[:,:,0:270]
-        o_g = observation[:,:,270:272].reshape(1, -1)
-        o_d = observation[:,:,272].unsqueeze(2).reshape(1, -1)
-        o_v = observation[:,:,273:275].reshape(1, -1)
+        o_g = observation[:,:,270:272].reshape(batch_size, -1)
+        o_d = observation[:,:,272].unsqueeze(2).reshape(batch_size, -1)
+        o_v = observation[:,:,273:275].reshape(batch_size, -1)
 
-        assert (o_l.shape == (1, Agent.stack_size(), 270)), "Lidar observation should have a shape of (1, " + str(Agent.stack_size()) + ", 270)"
-        assert (o_g.shape == (1, Agent.stack_size() * 2)), "Goal direction observation should have a shape of (1, " + str(Agent.stack_size() * 2) + ")"
-        assert (o_d.shape == (1, Agent.stack_size() * 1)), "Goal distance observation should have a shape of (1, " + str(Agent.stack_size() * 1) + ")"
-        assert (o_v.shape == (1, Agent.stack_size() * 2)), "Velocity observation should have a shape of (1, " + str(Agent.stack_size() * 2) + ")"
+        assert (o_l.shape == (batch_size, Agent.stack_size(), 270)), "Lidar observation should have a shape of (batch_size, " + str(Agent.stack_size()) + ", 270), received " + str(o_l.shape)
+        assert (o_g.shape == (batch_size, Agent.stack_size() * 2)), "Goal direction observation should have a shape of (batch_size, " + str(Agent.stack_size() * 2) + "), received " + str(o_g.shape)
+        assert (o_d.shape == (batch_size, Agent.stack_size() * 1)), "Goal distance observation should have a shape of (batch_size, " + str(Agent.stack_size() * 1) + "), received " + str(o_d.shape)
+        assert (o_v.shape == (batch_size, Agent.stack_size() * 2)), "Velocity observation should have a shape of (batch_size, " + str(Agent.stack_size() * 2) + "), received " + str(o_v.shape)
 
         # Create network branches
         out1 = self.lidar_stream(o_l)
@@ -78,10 +79,9 @@ class JestelNetwork(nn.Module):
 
         # Concatenate into output hidden layer
         combined = torch.cat((out1, out2, out3, out4), dim=1)
-        assert (combined.shape == (1, 336)), "Concatonated hidden layer should have a shape of (1, 336)"
+        assert (combined.shape == (batch_size, 336)), "Concatenated hidden layer should have a shape of (batch_size, 336), received " + str(combined.shape)
 
         output = self.output_stream(combined)
-        
         return output
 
 class Agent(nn.Module):
