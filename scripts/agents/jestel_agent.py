@@ -92,7 +92,7 @@ class Agent(nn.Module):
         super().__init__()
 
         self.critic = JestelNetwork(output_size=1)
-        self.actor_mean = JestelNetwork(output_size=2)
+        self.actor_mean = JestelNetwork(output_size=Agent.action_size())
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
     def get_value(self, x):
@@ -140,7 +140,7 @@ class Agent(nn.Module):
         ranges = np.vstack([ranges, [-1, 1]])
 
         # O_d (distance to goal) scan range
-        ranges = np.vstack([ranges, [0, 20]])
+        ranges = np.vstack([ranges, [0, 30]])
 
         # O_v (robot velocities) scan ranges
         ranges = np.vstack([ranges, [-1.1, 2.1]])
