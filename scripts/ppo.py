@@ -51,8 +51,6 @@ class Args:
     """the entity (team) of wandb's project"""
     capture_video: bool = False
     """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
-    save_model: bool = False
-    """whether to save model into the `runs/{run_name}` folder"""
     time_scale: float = 20.0
     """for Unity environments, sets the simulator timescale"""
     model_path: Optional[str] = None
@@ -325,23 +323,22 @@ if __name__ == "__main__":
 
     envs.close()
 
-    if args.save_model:
-        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-        torch.save(agent.state_dict(), model_path)
-        print(f"\nModel saved to {model_path}")
+    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    torch.save(agent.state_dict(), model_path)
+    print(f"\nModel saved to {model_path}")
 
-        import pickle 
-        metadata_path = f"runs/{run_name}/env_metadata.pkl"
-        with open(metadata_path, 'wb') as metadata_file:
-            pickle.dump(envs.metadata, metadata_file)
+    import pickle 
+    metadata_path = f"runs/{run_name}/env_metadata.pkl"
+    with open(metadata_path, 'wb') as metadata_file:
+        pickle.dump(envs.metadata, metadata_file)
 
-        import json, dataclasses
-        metadata_path = f"runs/{run_name}/env_metadata.json"
-        json_path = f"runs/{run_name}/args.json"
-        with open(json_path, 'w', encoding='utf-8') as file:
-            json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
+    import json, dataclasses
+    metadata_path = f"runs/{run_name}/env_metadata.json"
+    json_path = f"runs/{run_name}/args.json"
+    with open(json_path, 'w', encoding='utf-8') as file:
+        json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
 
-        with open(metadata_path, 'w', encoding='utf-8') as file:
-            json.dump(envs.metadata, file, ensure_ascii=False, indent=4)
+    with open(metadata_path, 'w', encoding='utf-8') as file:
+        json.dump(envs.metadata, file, ensure_ascii=False, indent=4)
 
     writer.close()
