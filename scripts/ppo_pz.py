@@ -29,7 +29,7 @@ from agents.jestel_agent import Agent
 
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from unity_gymnasium_env import UnityToGymWrapper
+from mlagents_envs.envs.unity_parallel_env import UnityParallelEnv
 
 from normalize import MinMaxNormalizeObservation
 
@@ -112,13 +112,15 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
     def thunk():
         if (env_id == "unity"):
             unity_env = make_unity_env(time_scale)
-            env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
+            env = UnityParallelEnv(unity_env)
         else:
             if capture_video and idx == 0:
                 env = gym.make(env_id, render_mode="rgb_array")
                 env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
             else:
                 env = gym.make(env_id)
+        print((env.num_agents))
+        print(env.observation_space(env.possible_agents[0]))
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -165,9 +167,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.time_scale, args.gamma) for i in range(args.num_envs)]
-    )
+    make_env_func = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma)
+    envs = make_env_func()
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
