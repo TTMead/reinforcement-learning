@@ -202,8 +202,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    obs = torch.zeros((args.num_steps, args.num_envs) + observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, args.num_envs) + action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -212,7 +212,7 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
 
@@ -266,9 +266,9 @@ if __name__ == "__main__":
                 returns = advantages + values
 
             # flatten the batch
-            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+            b_obs = obs.reshape((-1,) + observation_space.shape)
             b_logprobs = logprobs.reshape(-1)
-            b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+            b_actions = actions.reshape((-1,) + action_space.shape)
             b_advantages = advantages.reshape(-1)
             b_returns = returns.reshape(-1)
             b_values = values.reshape(-1)
