@@ -31,7 +31,7 @@ from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.envs.unity_parallel_env import UnityParallelEnv
 
-from normalize import MinMaxNormalizeObservation
+import supersuit as ss
 
 @dataclass
 class Args:
@@ -119,15 +119,34 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
                 env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
             else:
                 env = gym.make(env_id)
-        print((env.num_agents))
-        print(env.observation_space(env.possible_agents[0]))
-        env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = MinMaxNormalizeObservation(env, Agent.get_observation_range())
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        
+
+        # For Unity PettingZoo wrapper, reset must be called to populate some env properties
+        env.reset()
+        env.metadata = {}
+        assert (len(env._observation_spaces) == 1), ("Only single-team environments are currently supported, received " + str(len(env._observation_spaces[0])))
+        
+        # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
+        old_space = list(env._observation_spaces.values())[0]
+        obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
+        print(obs_range.shape)
+        print(obs_range[:,0])
+        print(obs_range[:,1])
+        env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
+                        low=obs_range[:,0],
+                        high=obs_range[:,1],
+                        shape=old_space.shape,
+                        dtype=old_space.dtype)
+        print(env._observation_spaces)
+        print(env.observation_spaces)
+
+        env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
+        env = ss.clip_actions_v0(env)
+        env = ss.normalize_obs_v0(env)
+        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+        # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
         return env
 
     return thunk
@@ -169,9 +188,13 @@ if __name__ == "__main__":
     # env setup
     make_env_func = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma)
     envs = make_env_func()
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    agent = Agent(envs).to(device)
+    from gym.spaces.box import Box as legacy_box_type
+    assert all(isinstance(space, legacy_box_type) for space in envs.action_spaces.values()), "only continuous action space is supported"
+
+    action_space = list(envs.action_spaces.values())[0]
+    observation_space = list(envs.observation_spaces.values())[0]
+    agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
         agent.load_state_dict(torch.load(args.model_path, map_location=device))
