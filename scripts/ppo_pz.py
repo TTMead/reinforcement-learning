@@ -129,16 +129,11 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
         # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
         old_space = list(env._observation_spaces.values())[0]
         obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
-        print(obs_range.shape)
-        print(obs_range[:,0])
-        print(obs_range[:,1])
         env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
                         low=obs_range[:,0],
                         high=obs_range[:,1],
                         shape=old_space.shape,
                         dtype=old_space.dtype)
-        print(env._observation_spaces)
-        print(env.observation_spaces)
 
         env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
         # env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -151,7 +146,28 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
 
     return thunk
 
+def batchify_obs(obs, device):
+    """Converts PZ style observations to batch of torch arrays."""
+    obs = np.stack([obs[a] for a in obs], axis=0) # convert to list of np arrays
+    # obs = obs.transpose(0, -1, 1, 2) # transpose to be (batch, channel, height, width)
+    obs = torch.tensor(obs).to(device) # convert to torch
+    return obs
 
+def batchify(x, device):
+    """Converts PZ style returns to batch of torch arrays."""
+    # convert to list of np arrays
+    x = np.stack([x[a] for a in x], axis=0)
+    # convert to torch
+    x = torch.tensor(x).to(device)
+
+    return x
+
+def unbatchify(x, env):
+    """Converts np array to PZ style arguments."""
+    x = x.cpu().numpy()
+    x = {a: x[i] for i, a in enumerate(env.possible_agents)}
+
+    return x
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -202,19 +218,22 @@ if __name__ == "__main__":
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    num_agents = len(envs.action_spaces)
+    obs = torch.zeros((args.num_steps, num_agents) + observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, num_agents) + action_space.shape).to(device)
+    logprobs = torch.zeros((args.num_steps, num_agents)).to(device)
+    rewards = torch.zeros((args.num_steps, num_agents)).to(device)
+    dones = torch.zeros((args.num_steps, num_agents)).to(device)
+    values = torch.zeros((args.num_steps, num_agents)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    next_obs, _ = envs.reset()
-    next_obs = torch.Tensor(next_obs).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
+    next_obs = envs.reset()
+    # next_obs = [next_obs[a] for a in next_obs]
+    
+    # next_obs = torch.Tensor(next_obs).to(device)
+    next_done = torch.zeros(num_agents).to(device)
 
     try:
         for iteration in range(1, args.num_iterations + 1):
@@ -226,21 +245,21 @@ if __name__ == "__main__":
 
             for step in range(0, args.num_steps):
                 global_step += args.num_envs
-                obs[step] = next_obs
+
+                batched_obs = batchify_obs(next_obs, device)
+                obs[step] = batched_obs
                 dones[step] = next_done
 
                 # ALGO LOGIC: action logic
                 with torch.no_grad():
-                    action, logprob, _, value = agent.get_action_and_value(next_obs)
+                    action, logprob, _, value = agent.get_action_and_value(batched_obs)
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
-
-                # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-                next_done = np.logical_or(terminations, truncations)
-                rewards[step] = torch.tensor(reward).to(device).view(-1)
-                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+                next_obs, reward, next_done, infos = envs.step(unbatchify(action, envs))
+                print("reward " + str(reward))
+                rewards[step] = batchify(reward, device).view(-1)
+                next_done = batchify(next_done, device)
 
                 if "final_info" in infos:
                     for info in infos["final_info"]:
