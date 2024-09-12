@@ -270,7 +270,7 @@ if __name__ == "__main__":
                 if (next_done == 1):
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_return):
-                        episodic_msg = episodic_msg + str(agent_reward) + "|"
+                        episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
                     writer.add_scalar("charts/episodic_length", step, global_step)
                     print(episodic_msg)
