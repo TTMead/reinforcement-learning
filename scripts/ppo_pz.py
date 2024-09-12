@@ -111,42 +111,39 @@ def make_unity_env(editor_timescale) -> UnityEnvironment:
     return env
 
 def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
-    def thunk():
-        if (env_id == "unity"):
-            unity_env = make_unity_env(time_scale)
-            env = UnityParallelEnv(unity_env)
+    if (env_id == "unity"):
+        unity_env = make_unity_env(time_scale)
+        env = UnityParallelEnv(unity_env)
+    else:
+        if capture_video and idx == 0:
+            env = gym.make(env_id, render_mode="rgb_array")
+            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
-            if capture_video and idx == 0:
-                env = gym.make(env_id, render_mode="rgb_array")
-                env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-            else:
-                env = gym.make(env_id)
-        
+            env = gym.make(env_id)
+    
 
-        # For Unity PettingZoo wrapper, reset must be called to populate some env properties
-        env.reset()
-        env.metadata = {}
-        assert (len(env._observation_spaces) == 1), ("Only single-team environments are currently supported, received " + str(len(env._observation_spaces[0])))
-        
-        # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
-        old_space = list(env._observation_spaces.values())[0]
-        obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
-        env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
-                        low=obs_range[:,0],
-                        high=obs_range[:,1],
-                        shape=old_space.shape,
-                        dtype=old_space.dtype)
+    # For Unity PettingZoo wrapper, reset must be called to populate some env properties
+    env.reset()
+    env.metadata = {}
+    assert (len(env._observation_spaces) == 1), ("Only single-team environments are currently supported, received " + str(len(env._observation_spaces[0])))
+    
+    # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
+    old_space = list(env._observation_spaces.values())[0]
+    obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
+    env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
+                    low=obs_range[:,0],
+                    high=obs_range[:,1],
+                    shape=old_space.shape,
+                    dtype=old_space.dtype)
 
-        env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = ss.clip_actions_v0(env)
-        env = ss.normalize_obs_v0(env)
-        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        return env
-
-    return thunk
+    env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
+    # env = gym.wrappers.RecordEpisodeStatistics(env)
+    env = ss.clip_actions_v0(env)
+    env = ss.normalize_obs_v0(env)
+    # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+    # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+    return env
 
 def batchify_obs(obs, device):
     """Converts PZ style observations to batch of torch arrays."""
@@ -204,14 +201,13 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    make_env_func = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma)
-    envs = make_env_func()
+    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma)
 
     from gym.spaces.box import Box as legacy_box_type
-    assert all(isinstance(space, legacy_box_type) for space in envs.action_spaces.values()), "only continuous action space is supported"
+    assert all(isinstance(space, legacy_box_type) for space in env.action_spaces.values()), "only continuous action space is supported"
 
-    action_space = list(envs.action_spaces.values())[0]
-    observation_space = list(envs.observation_spaces.values())[0]
+    action_space = list(env.action_spaces.values())[0]
+    observation_space = list(env.observation_spaces.values())[0]
     agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
@@ -220,7 +216,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    num_agents = len(envs.action_spaces)
+    num_agents = len(env.action_spaces)
     obs = torch.zeros((args.num_steps, num_agents) + observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, num_agents) + action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, num_agents)).to(device)
@@ -231,7 +227,7 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    next_obs = envs.reset()
+    next_obs = env.reset()
     # next_obs = [next_obs[a] for a in next_obs]
     
     # next_obs = torch.Tensor(next_obs).to(device)
@@ -245,7 +241,7 @@ if __name__ == "__main__":
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
 
-            next_obs = envs.reset()
+            next_obs = env.reset()
             for step in range(0, args.num_steps):
                 global_step += args.num_envs
 
@@ -259,7 +255,7 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
-                next_obs, reward, next_done, infos = envs.step(unbatchify(action, envs))
+                next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
                 rewards[step] = batchify(reward, device).view(-1)
                 next_done = torch.prod(batchify(next_done, device))
 
@@ -370,7 +366,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
 
-    envs.close()
+    env.close()
 
     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
     torch.save(agent.state_dict(), model_path)
@@ -379,7 +375,7 @@ if __name__ == "__main__":
     import pickle 
     metadata_path = f"runs/{run_name}/env_metadata.pkl"
     with open(metadata_path, 'wb') as metadata_file:
-        pickle.dump(envs.metadata, metadata_file)
+        pickle.dump(env.metadata, metadata_file)
 
     import json, dataclasses
     metadata_path = f"runs/{run_name}/env_metadata.json"
@@ -388,6 +384,6 @@ if __name__ == "__main__":
         json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
 
     with open(metadata_path, 'w', encoding='utf-8') as file:
-        json.dump(envs.metadata, file, ensure_ascii=False, indent=4)
+        json.dump(env.metadata, file, ensure_ascii=False, indent=4)
 
     writer.close()
