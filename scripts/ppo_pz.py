@@ -59,6 +59,10 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "unity"
     """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
+    file_name: Optional[str] = None
+    """if a path is provided, will use the provided compiled Unity executable"""
+    no_graphics: bool = False
+    """disables graphics from Unity3D environments"""
     total_episodes: int = 1000
     """total episodes of the experiments"""
     total_timesteps: int = 100000
@@ -102,17 +106,18 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
 
-def make_unity_env(editor_timescale) -> UnityEnvironment:
+def make_unity_env(editor_timescale, file_name, no_graphics) -> UnityEnvironment:
     config_channel = EngineConfigurationChannel()
-    print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
-    env = UnityEnvironment(seed=1, side_channels=[config_channel])
+    if (not file_name):
+        print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
+    env = UnityEnvironment(seed=1, file_name=file_name, no_graphics=no_graphics, side_channels=[config_channel])
     config_channel.set_configuration_parameters(time_scale=editor_timescale)
     env.reset()
     return env
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_name, no_graphics):
     if (env_id == "unity"):
-        unity_env = make_unity_env(time_scale)
+        unity_env = make_unity_env(time_scale, file_name, no_graphics)
         env = UnityParallelEnv(unity_env)
     else:
         if capture_video and idx == 0:
@@ -201,7 +206,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma)
+    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_name, args.no_graphics)
 
     from gym.spaces.box import Box as legacy_box_type
     assert all(isinstance(space, legacy_box_type) for space in env.action_spaces.values()), "only continuous action space is supported"
