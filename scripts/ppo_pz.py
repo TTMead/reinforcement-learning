@@ -59,6 +59,8 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "unity"
     """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
+    total_episodes: int = 1000
+    """total episodes of the experiments"""
     total_timesteps: int = 100000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
@@ -236,13 +238,14 @@ if __name__ == "__main__":
     next_done = torch.zeros(num_agents).to(device)
 
     try:
-        for iteration in range(1, args.num_iterations + 1):
+        for episode in range(args.total_episodes):
             # Annealing the rate if instructed to do so.
             if args.anneal_lr:
-                frac = 1.0 - (iteration - 1.0) / args.num_iterations
+                frac = 1.0 - (episode - 1.0) / args.total_episodes
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
 
+            next_obs = envs.reset()
             for step in range(0, args.num_steps):
                 global_step += args.num_envs
 
@@ -257,9 +260,12 @@ if __name__ == "__main__":
                 actions[step] = action
                 logprobs[step] = logprob
                 next_obs, reward, next_done, infos = envs.step(unbatchify(action, envs))
-                print("reward " + str(reward))
                 rewards[step] = batchify(reward, device).view(-1)
-                next_done = batchify(next_done, device)
+                next_done = torch.prod(batchify(next_done, device))
+
+                # Check for early episode completion
+                if (next_done == 1):
+                    break
 
                 if "final_info" in infos:
                     for info in infos["final_info"]:
@@ -270,7 +276,7 @@ if __name__ == "__main__":
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = agent.get_value(next_obs).reshape(1, -1)
+                next_value = agent.get_value(batchify_obs(next_obs, device)).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
                 lastgaelam = 0
                 for t in reversed(range(args.num_steps)):
