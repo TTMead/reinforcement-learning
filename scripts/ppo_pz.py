@@ -142,7 +142,6 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_name,
                     dtype=old_space.dtype)
 
     env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
-    # env = gym.wrappers.RecordEpisodeStatistics(env)
     env = ss.clip_actions_v0(env)
     env = ss.normalize_obs_v0(env)
     # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
@@ -247,6 +246,8 @@ if __name__ == "__main__":
                 optimizer.param_groups[0]["lr"] = lrnow
 
             next_obs = env.reset()
+            total_episodic_return = 0
+
             for step in range(0, args.num_steps):
                 global_step += args.num_envs
 
@@ -262,18 +263,18 @@ if __name__ == "__main__":
                 logprobs[step] = logprob
                 next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
                 rewards[step] = batchify(reward, device).view(-1)
+                total_episodic_return += rewards[step]
                 next_done = torch.prod(batchify(next_done, device))
 
-                # Check for early episode completion
+                # Check for episode completion
                 if (next_done == 1):
+                    episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
+                    for a in total_episodic_return:
+                        episodic_msg = episodic_msg + str(a) + "|"
+                        writer.add_scalar("charts/episodic_return", a, global_step)
+                        writer.add_scalar("charts/episodic_length", step, global_step)
+                    print(episodic_msg)
                     break
-
-                if "final_info" in infos:
-                    for info in infos["final_info"]:
-                        if info and "episode" in info:
-                            print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                            writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                            writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
             # bootstrap value if not done
             with torch.no_grad():
