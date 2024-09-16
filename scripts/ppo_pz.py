@@ -265,6 +265,10 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
+                next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
+                rewards[step] = batchify(reward, device).view(-1)
+                total_episodic_return += rewards[step]
+                next_done = torch.prod(batchify(next_done, device)) # Only true if all the agents are 'done'
 
                 # Unity will sometimes request both a decision step and termination step after stepping the environment.
                 # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
@@ -273,11 +277,6 @@ if __name__ == "__main__":
                 if agents_have_reset:
                     print("Early agent reset")
                     unity_error_count += 1
-
-                next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
-                rewards[step] = batchify(reward, device).view(-1)
-                total_episodic_return += rewards[step]
-                next_done = torch.prod(batchify(next_done, device)) # Only true if all the agents are 'done'
 
                 # Check for episode completion
                 if (next_done == 1 or agents_have_reset):
