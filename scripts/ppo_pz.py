@@ -125,13 +125,12 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_name,
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
             env = gym.make(env_id)
-    
 
     # For Unity PettingZoo wrapper, reset must be called to populate some env properties
     env.reset()
     env.metadata = {}
-    assert (len(env._observation_spaces) == 1), ("Only single-team environments are currently supported, received " + str(len(env._observation_spaces[0])))
-    
+    assert (len(env._env.behavior_specs) == 1), ("Only single-team environments are currently supported, received " + str(len(env._env.behavior_specs)))
+
     # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
     old_space = list(env._observation_spaces.values())[0]
     obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
@@ -208,13 +207,14 @@ if __name__ == "__main__":
     env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_name, args.no_graphics)
 
     from gym.spaces.box import Box as legacy_box_type
-    assert all(isinstance(space, legacy_box_type) for space in env.action_spaces.values()), "only continuous action space is supported"
+    assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
 
     # Convert all action spaces to float32 due to Unity ML-Agents bug [https://github.com/Unity-Technologies/ml-agents/issues/5976]
     for agent in env.possible_agents:
         env.action_space(agent).dtype = np.float32
 
-    action_space = list(env.action_spaces.values())[0]
+    # action_space = list(env.action_spaces.values())[0]
+    action_space = env.action_space(env.possible_agents[0])
     observation_space = list(env.observation_spaces.values())[0]
     agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    num_agents = len(env.action_spaces)
+    num_agents = len(env.possible_agents)
     obs = torch.zeros((args.num_steps, num_agents) + observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, num_agents) + action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, num_agents)).to(device)
