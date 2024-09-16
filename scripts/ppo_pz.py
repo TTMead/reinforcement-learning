@@ -280,7 +280,7 @@ if __name__ == "__main__":
                 next_done = torch.prod(batchify(next_done, device)) # Only true if all the agents are 'done'
 
                 # Check for episode completion
-                if (next_done == 1):
+                if (next_done == 1 or agents_have_reset):
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_return):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
