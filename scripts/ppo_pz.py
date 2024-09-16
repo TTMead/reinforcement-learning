@@ -231,6 +231,7 @@ if __name__ == "__main__":
     rewards = torch.zeros((args.num_steps, num_agents)).to(device)
     dones = torch.zeros((args.num_steps, num_agents)).to(device)
     values = torch.zeros((args.num_steps, num_agents)).to(device)
+    unity_error_count = 0
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -265,6 +266,15 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
+
+                # Unity will sometimes request both a decision step and termination step after stepping the environment.
+                # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
+                # occurs, assume the level has completed.
+                agents_have_reset = (len(env.aec_env.agents) > num_agents)
+                if agents_have_reset:
+                    print("Early agent reset")
+                    unity_error_count += 1
+
                 next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
                 rewards[step] = batchify(reward, device).view(-1)
                 total_episodic_return += rewards[step]
@@ -277,6 +287,7 @@ if __name__ == "__main__":
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
                     writer.add_scalar("charts/episodic_length", step, global_step)
+                    writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
                     break
 
