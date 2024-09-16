@@ -219,7 +219,7 @@ if __name__ == "__main__":
     agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
-        agent.load_state_dict(torch.load(args.model_path, map_location=device))
+        agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
 
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
