@@ -213,9 +213,8 @@ if __name__ == "__main__":
     for agent in env.possible_agents:
         env.action_space(agent).dtype = np.float32
 
-    # action_space = list(env.action_spaces.values())[0]
     action_space = env.action_space(env.possible_agents[0])
-    observation_space = list(env.observation_spaces.values())[0]
+    observation_space = env.observation_space(env.possible_agents[0])
     agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
