@@ -210,6 +210,10 @@ if __name__ == "__main__":
     from gym.spaces.box import Box as legacy_box_type
     assert all(isinstance(space, legacy_box_type) for space in env.action_spaces.values()), "only continuous action space is supported"
 
+    # Convert all action spaces to float32 due to Unity ML-Agents bug [https://github.com/Unity-Technologies/ml-agents/issues/5976]
+    for agent in env.possible_agents:
+        env.action_space(agent).dtype = np.float32
+
     action_space = list(env.action_spaces.values())[0]
     observation_space = list(env.observation_spaces.values())[0]
     agent = Agent(observation_space, action_space).to(device)
@@ -264,7 +268,7 @@ if __name__ == "__main__":
                 next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
                 rewards[step] = batchify(reward, device).view(-1)
                 total_episodic_return += rewards[step]
-                next_done = torch.prod(batchify(next_done, device))
+                next_done = torch.prod(batchify(next_done, device)) # Only true if all the agents are 'done'
 
                 # Check for episode completion
                 if (next_done == 1):
