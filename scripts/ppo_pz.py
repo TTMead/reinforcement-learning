@@ -63,14 +63,10 @@ class Args:
     """if a path is provided, will use the provided compiled Unity executable"""
     no_graphics: bool = False
     """disables graphics from Unity3D environments"""
-    total_episodes: int = 1000
-    """total episodes of the experiments"""
     total_timesteps: int = 100000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 1
-    """the number of parallel game environments"""
     num_steps: int = 4096
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
@@ -103,8 +99,8 @@ class Args:
     """the batch size (computed in runtime)"""
     minibatch_size: int = 0
     """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
+    num_updates: int = 0
+    """the number of times the policy will update (computed in runtime)"""
 
 def make_unity_env(editor_timescale, file_name, no_graphics) -> UnityEnvironment:
     config_channel = EngineConfigurationChannel()
@@ -173,9 +169,6 @@ def unbatchify(x, env):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    args.batch_size = int(args.num_envs * args.num_steps)
-    args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    args.num_iterations = args.total_timesteps // args.batch_size
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
@@ -230,45 +223,51 @@ if __name__ == "__main__":
     rewards = torch.zeros((args.num_steps, num_agents)).to(device)
     dones = torch.zeros((args.num_steps, num_agents)).to(device)
     values = torch.zeros((args.num_steps, num_agents)).to(device)
-    unity_error_count = 0
+
+    # Derived arguments
+    args.batch_size = int(num_agents * args.num_steps)
+    args.minibatch_size = int(args.batch_size // args.num_minibatches)
+    args.num_updates = args.total_timesteps // args.batch_size
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
+    unity_error_count = 0
+    end_step = 0
     next_obs = env.reset()
-    # next_obs = [next_obs[a] for a in next_obs]
-    
-    # next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(num_agents).to(device)
 
     try:
-        for episode in range(args.total_episodes):
+        for update in range(1, args.num_updates + 1):
             # Annealing the rate if instructed to do so.
             if args.anneal_lr:
-                frac = 1.0 - (episode - 1.0) / args.total_episodes
+                frac = 1.0 - (update - 1.0) / args.num_updates
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
 
-            next_obs = env.reset()
-            total_episodic_return = 0
+            next_obs = batchify_obs(env.reset(), device)
+            total_episodic_reward = 0
 
             for step in range(0, args.num_steps):
-                global_step += args.num_envs
+                global_step += 1 # possibly increment by num agents??
 
-                batched_obs = batchify_obs(next_obs, device)
-                obs[step] = batched_obs
+                obs[step] = next_obs
                 dones[step] = next_done
 
                 # ALGO LOGIC: action logic
                 with torch.no_grad():
-                    action, logprob, _, value = agent.get_action_and_value(batched_obs)
+                    action, logprob, _, value = agent.get_action_and_value(next_obs)
                     values[step] = value.flatten()
-                actions[step] = action
-                logprobs[step] = logprob
-                next_obs, reward, next_done, infos = env.step(unbatchify(action, env))
+                    actions[step] = action
+                    logprobs[step] = logprob
+                
+                next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(action, env))
+                next_obs = batchify_obs(next_obs_unbatched, device)
+                next_done = batchify(next_done, device).long()
+
+                # Update rewards
                 rewards[step] = batchify(reward, device).view(-1)
-                total_episodic_return += rewards[step]
-                next_done = torch.prod(batchify(next_done, device)) # Only true if all the agents are 'done'
+                total_episodic_reward += rewards[step]
 
                 # Unity will sometimes request both a decision step and termination step after stepping the environment.
                 # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
@@ -279,19 +278,22 @@ if __name__ == "__main__":
                     unity_error_count += 1
 
                 # Check for episode completion
-                if (next_done == 1 or agents_have_reset):
+                if (torch.prod(next_done) == 1 or agents_have_reset):
+                    end_step = step
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
-                    for agent_index, agent_reward in enumerate(total_episodic_return):
+                    for agent_index, agent_reward in enumerate(total_episodic_reward):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
                     writer.add_scalar("charts/episodic_length", step, global_step)
                     writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
-                    break
+
+                    next_obs = batchify_obs(env.reset(), device)
+                    total_episodic_reward = 0
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = agent.get_value(batchify_obs(next_obs, device)).reshape(1, -1)
+                next_value = agent.get_value(next_obs).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
                 lastgaelam = 0
                 for t in reversed(range(args.num_steps)):
@@ -326,6 +328,7 @@ if __name__ == "__main__":
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
+                    # Calculate training metrics for debugging
                     with torch.no_grad():
                         # calculate approx_kl http://joschu.net/blog/kl-approx.html
                         old_approx_kl = (-logratio).mean()
