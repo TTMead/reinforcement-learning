@@ -63,7 +63,7 @@ class Args:
     """if a path is provided, will use the provided compiled Unity executable"""
     no_graphics: bool = False
     """disables graphics from Unity3D environments"""
-    total_timesteps: int = 100000
+    total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
@@ -231,9 +231,9 @@ if __name__ == "__main__":
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
+    episode_start_step = 0
     start_time = time.time()
     unity_error_count = 0
-    end_step = 0
     next_obs = env.reset()
     next_done = torch.zeros(num_agents).to(device)
 
@@ -249,7 +249,7 @@ if __name__ == "__main__":
             total_episodic_reward = 0
 
             for step in range(0, args.num_steps):
-                global_step += 1 # possibly increment by num agents??
+                global_step += 1
 
                 obs[step] = next_obs
                 dones[step] = next_done
@@ -264,7 +264,6 @@ if __name__ == "__main__":
                 next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(action, env))
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
-                print(next_done)
 
                 # Update rewards
                 rewards[step] = batchify(reward, device).view(-1)
@@ -280,17 +279,17 @@ if __name__ == "__main__":
 
                 # Check for episode completion
                 if (torch.prod(next_done) == 1 or agents_have_reset):
-                    end_step = step
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_reward):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
-                    writer.add_scalar("charts/episodic_length", step, global_step)
+                    writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
                     writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
 
                     next_obs = batchify_obs(env.reset(), device)
                     total_episodic_reward = 0
+                    episode_start_step = global_step
 
             # bootstrap value if not done
             with torch.no_grad():
