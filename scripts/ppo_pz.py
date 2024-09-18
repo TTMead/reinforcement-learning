@@ -102,18 +102,18 @@ class Args:
     num_updates: int = 0
     """the number of times the policy will update (computed in runtime)"""
 
-def make_unity_env(editor_timescale, file_path, no_graphics) -> UnityEnvironment:
+def make_unity_env(editor_timescale, file_path, no_graphics, seed) -> UnityEnvironment:
     config_channel = EngineConfigurationChannel()
     if (not file_path):
         print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
-    env = UnityEnvironment(seed=1, file_name=file_path, no_graphics=no_graphics, side_channels=[config_channel])
+    env = UnityEnvironment(seed=seed, file_name=file_path, no_graphics=no_graphics, side_channels=[config_channel])
     config_channel.set_configuration_parameters(time_scale=editor_timescale)
     env.reset()
     return env
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path, no_graphics):
+def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path, no_graphics, seed):
     if (env_id == "unity"):
-        unity_env = make_unity_env(time_scale, file_path, no_graphics)
+        unity_env = make_unity_env(time_scale, file_path, no_graphics, seed)
         env = UnityParallelEnv(unity_env)
     else:
         if capture_video and idx == 0:
@@ -197,7 +197,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics)
+    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
 
     from gym.spaces.box import Box as legacy_box_type
     assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
