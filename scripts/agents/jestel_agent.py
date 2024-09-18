@@ -148,13 +148,6 @@ class Agent(nn.Module):
 
         return ranges
 
-    @staticmethod
-    def get_action_range():
-        ranges = np.empty((0,2))
-        ranges = np.vstack([ranges, [0, 1]])
-        ranges = np.vstack([ranges, [0, 1]])
-        return ranges
-
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)

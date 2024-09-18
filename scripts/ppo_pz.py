@@ -130,14 +130,6 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path,
                     shape=old_space.shape,
                     dtype=old_space.dtype)
 
-    # Add finite action-space range to env from Agent (so clip_actions_v0 will work)
-    from gym.spaces.box import Box as legacy_box_type
-    action_range = Agent.get_action_range()
-    env._action_spaces[list(env._action_spaces.keys())[0]] = legacy_box_type(
-                    low=action_range[:,0],
-                    high=action_range[:,1],
-                    dtype=np.float64)
-
     env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
     env = ss.clip_actions_v0(env)
     env = ss.normalize_obs_v0(env)
@@ -250,7 +242,7 @@ if __name__ == "__main__":
                     values[step] = value.flatten()
                     actions[step] = action
                     logprobs[step] = logprob
-                
+
                 next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(action, env))
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
