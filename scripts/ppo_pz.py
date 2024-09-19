@@ -214,9 +214,10 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     episode_start_step = 0
+    total_episodic_reward = 0
     start_time = time.time()
     unity_error_count = 0
-    next_obs = env.reset()
+    next_obs = batchify_obs(env.reset(), device)
     next_done = torch.zeros(num_agents).to(device)
 
     try:
@@ -226,9 +227,6 @@ if __name__ == "__main__":
                 frac = 1.0 - (update - 1.0) / args.num_updates
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
-
-            next_obs = batchify_obs(env.reset(), device)
-            total_episodic_reward = 0
 
             for step in range(0, args.num_steps):
                 global_step += 1
