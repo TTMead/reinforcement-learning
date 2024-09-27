@@ -61,7 +61,7 @@ class Args:
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
-    num_steps: int = 1024
+    num_steps: int = 2048
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -242,6 +242,18 @@ if __name__ == "__main__":
                     logprobs[step] = logprob
 
                 next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(action, env))
+
+                # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
+                # with indicating 'done' agents in parallel pettingzoo environments)
+                dead_agent_reward = -99.0
+                for agent_id, agent_reward in reward.items():
+                    if agent_reward == dead_agent_reward:
+                        # Assign any dead agents as 'done'
+                        next_done[agent_id] = True
+
+                        # GAE calculations assume a reward of 0 for dead agents
+                        reward[agent_id] = 0
+
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
 

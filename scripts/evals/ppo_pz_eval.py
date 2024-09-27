@@ -46,7 +46,7 @@ if __name__ == "__main__":
     import tyro
     args = tyro.cli(Args)
     
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     run_name = f"eval"
     capture_video = False
     gamma = 0.99
