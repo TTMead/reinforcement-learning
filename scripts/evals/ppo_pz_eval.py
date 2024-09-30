@@ -80,6 +80,14 @@ if __name__ == "__main__":
 
         obs = batchify_obs(obs_unbatched, device)
         next_done = batchify(next_done, device).long()
+
+        # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
+        # with indicating 'done' agents in parallel pettingzoo environments)
+        dead_agent_reward = -99.0
+        for agent_id, agent_reward in reward.items():
+            if agent_reward == dead_agent_reward:
+                reward[agent_id] = 0
+
         total_episodic_reward += batchify(reward, device).view(-1)
 
         # Unity will sometimes request both a decision step and termination step after stepping the environment.
