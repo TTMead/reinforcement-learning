@@ -14,6 +14,7 @@ Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cle
 
 import os
 import random
+import traceback
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -378,7 +379,8 @@ if __name__ == "__main__":
             writer.add_scalar("losses/explained_variance", explained_var, global_step)
             print("SPS:", int(global_step / (time.time() - start_time)))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-    except KeyboardInterrupt:
+    except:
+        print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
 
     env.close()
