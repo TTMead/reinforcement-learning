@@ -71,6 +71,7 @@ if __name__ == "__main__":
     global_step = 0
     obs = batchify_obs(env.reset(), device)
     episode_count = 0
+    episodic_rewards = []
     
     while episode_count < args.eval_episodes:
         global_step += 1
@@ -103,8 +104,15 @@ if __name__ == "__main__":
             episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
             for agent_index, agent_reward in enumerate(total_episodic_reward):
                 episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
+                episodic_rewards.append(agent_reward)
             print(episodic_msg)
 
             next_obs = batchify_obs(env.reset(), device)
             total_episodic_reward = 0
             episode_count += 1
+    
+    # Calculate episodic reward stats.
+    pct_positive = sum(reward > 0 for reward in episodic_rewards) / len(episodic_rewards)
+    print("Percentage of positive reward episodes: " + str(pct_positive))
+
+    env.close()
