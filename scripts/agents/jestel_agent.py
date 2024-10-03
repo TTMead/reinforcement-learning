@@ -85,15 +85,15 @@ class JestelNetwork(nn.Module):
         return output
 
 class Agent(nn.Module):
-    def __init__(self, envs):
-        assert (envs.single_observation_space.shape[0] == Agent.stacked_observation_size()), ("The Jestel implementation requires an observation space of " + str(Agent.stacked_observation_size()) + " continuous values, received observation of shape: " + str(envs.single_observation_space.shape))
-        assert (envs.single_action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(envs.single_action_space.shape))
+    def __init__(self, observation_space, action_space):
+        assert (observation_space.shape[0] == Agent.stacked_observation_size()), ("The Jestel implementation requires an observation space of " + str(Agent.stacked_observation_size()) + " continuous values, received observation of shape: " + str(envs.single_observation_space.shape))
+        assert (action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(envs.single_action_space.shape))
 
         super().__init__()
 
         self.critic = JestelNetwork(output_size=1)
         self.actor_mean = JestelNetwork(output_size=Agent.action_size())
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
+        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_space.shape)))
 
     def get_value(self, x):
         return self.critic(x)
