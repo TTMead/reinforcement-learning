@@ -72,7 +72,7 @@ class Args:
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
-    num_steps: int = 2048
+    num_steps: int = 1024
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = agent.get_value(next_obs).reshape(1, -1)
+                next_value = torch.cat([agent.get_value(next_obs[idx].unsqueeze(0)) for idx, agent in enumerate(agents)], dim=1)
                 advantages = torch.zeros_like(rewards).to(device)
                 lastgaelam = 0
                 for t in reversed(range(args.num_steps)):
