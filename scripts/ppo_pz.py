@@ -9,6 +9,13 @@ prohibited. Offenders will be held liable for the payment of damages.
 """
 
 '''
+Trains a team of PPO agents using a Unity3D environment passed through the
+ML-Agents PettingZoo wrapper.
+
+Utilises the 'shared network' approach where during a rollout a single policy is
+utilised across all the agents and the trajectories are all combined to
+train/update the policy weights.
+
 Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py
 '''
 
