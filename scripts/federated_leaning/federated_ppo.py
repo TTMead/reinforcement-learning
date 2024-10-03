@@ -20,13 +20,13 @@ agent.
 Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py
 '''
 
-import os
 import random
 import traceback
 import time
 from dataclasses import dataclass
 from typing import Optional
 
+import supersuit as ss
 import gymnasium as gym
 import numpy as np
 import torch
@@ -34,13 +34,15 @@ import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
-from agents.jestel_agent import Agent
-
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.envs.unity_parallel_env import UnityParallelEnv
 
-import supersuit as ss
+import sys, os
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(parent_dir)
+
+from agents.jestel_agent import Agent
 
 @dataclass
 class Args:
@@ -199,15 +201,17 @@ if __name__ == "__main__":
 
     action_space = env.action_space(env.possible_agents[0])
     observation_space = env.observation_space(env.possible_agents[0])
-    agent = Agent(observation_space, action_space).to(device)
+    num_agents = len(env.possible_agents)
+
+    agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
-        agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
+        for agent in agents:
+            agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
 
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
 
     # ALGO Logic: Storage setup
-    num_agents = len(env.possible_agents)
     obs = torch.zeros((args.num_steps, num_agents) + observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, num_agents) + action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, num_agents)).to(device)
@@ -235,7 +239,7 @@ if __name__ == "__main__":
             if args.anneal_lr:
                 frac = 1.0 - (update - 1.0) / args.num_updates
                 lrnow = frac * args.learning_rate
-                optimizer.param_groups[0]["lr"] = lrnow
+                for optimizer in optimizers: optimizer.param_groups[0]["lr"] = lrnow
 
             for step in range(0, args.num_steps):
                 global_step += 1
@@ -243,14 +247,22 @@ if __name__ == "__main__":
                 obs[step] = next_obs
                 dones[step] = next_done
 
-                # ALGO LOGIC: action logic
+                # Get the new action from each policy for this timestep
+                new_values = torch.empty((0)).to(device)
+                new_actions = torch.empty((0, 2)).to(device)
+                new_logprobs = torch.empty((0)).to(device)
                 with torch.no_grad():
-                    action, logprob, _, value = agent.get_action_and_value(next_obs)
-                    values[step] = value.flatten()
-                    actions[step] = action
-                    logprobs[step] = logprob
+                    for idx, agent in enumerate(agents):
+                        action, logprob, _, value = agent.get_action_and_value(next_obs[idx].unsqueeze(0))
+                        new_values = torch.cat((new_values, value.flatten()))
+                        new_actions = torch.cat((new_actions, action))
+                        new_logprobs = torch.cat((new_logprobs, logprob))
+                values[step] = new_values
+                actions[step] = new_actions
+                logprobs[step] = new_logprobs
 
-                next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(action, env))
+                # Step the environment with the batched policy actions
+                next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(new_actions, env))
 
                 # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
                 # with indicating 'done' agents in parallel pettingzoo environments)
@@ -273,13 +285,13 @@ if __name__ == "__main__":
                 # Unity will sometimes request both a decision step and termination step after stepping the environment.
                 # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
                 # occurs, assume the level has completed.
-                agents_have_reset = (len(env.aec_env.agents) > num_agents)
-                if agents_have_reset:
-                    print("Early agent reset")
+                unity_error_occured = (len(env.aec_env.agents) > num_agents)
+                if unity_error_occured:
+                    print("Reseting early due to Unity error")
                     unity_error_count += 1
 
                 # Check for episode completion
-                if (torch.prod(next_done) == 1 or agents_have_reset):
+                if (torch.prod(next_done) == 1 or unity_error_occured):
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_reward):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
