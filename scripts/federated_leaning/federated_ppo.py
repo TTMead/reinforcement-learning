@@ -377,27 +377,26 @@ if __name__ == "__main__":
                         entropy_loss = entropy.mean()
                         loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                        optimizer.zero_grad()
+                        optimizers[idx].zero_grad()
                         loss.backward()
                         nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                        optimizer.step()
+                        optimizers[idx].step()
 
                     if args.target_kl is not None and approx_kl > args.target_kl:
                         break
 
-            y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-            var_y = np.var(y_true)
-            explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+                y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
+                var_y = np.var(y_true)
+                explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-            # TRY NOT TO MODIFY: record rewards for plotting purposes
-            writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-            writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-            writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-            writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-            writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
-            writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-            writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-            writer.add_scalar("losses/explained_variance", explained_var, global_step)
+                writer.add_scalar("charts/learning_rate(" + str(idx) + ")", optimizers[idx].param_groups[0]["lr"], global_step)
+                writer.add_scalar("losses/value_loss(" + str(idx) + ")", v_loss.item(), global_step)
+                writer.add_scalar("losses/policy_loss(" + str(idx) + ")", pg_loss.item(), global_step)
+                writer.add_scalar("losses/entropy(" + str(idx) + ")", entropy_loss.item(), global_step)
+                writer.add_scalar("losses/old_approx_kl(" + str(idx) + ")", old_approx_kl.item(), global_step)
+                writer.add_scalar("losses/approx_kl(" + str(idx) + ")", approx_kl.item(), global_step)
+                writer.add_scalar("losses/clipfrac(" + str(idx) + ")", np.mean(clipfracs), global_step)
+                writer.add_scalar("losses/explained_variance(" + str(idx) + ")", explained_var, global_step)
             print("SPS:", int(global_step / (time.time() - start_time)))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
     except:
@@ -406,9 +405,10 @@ if __name__ == "__main__":
 
     env.close()
 
-    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-    torch.save(agent.state_dict(), model_path)
-    print(f"\nModel saved to {model_path}")
+    for idx, agent in enumerate(agents):
+        model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
+        torch.save(agent.state_dict(), model_path)
+    print(f"\nModels saved to {model_path}")
 
     import pickle 
     metadata_path = f"runs/{run_name}/env_metadata.pkl"
