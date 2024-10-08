@@ -205,9 +205,13 @@ if __name__ == "__main__":
 
     agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
     if (args.model_path):
-        print("Loading pre-existing model from [" + args.model_path + "]")
-        for agent in agents:
-            agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
+        print("Loading pre-existing models inside directory [" + args.model_path + "].")
+
+        model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
+        assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
+
+        for model_path, agent in zip(model_paths, agents):
+            agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
 
     optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
 
