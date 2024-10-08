@@ -25,6 +25,7 @@ import traceback
 import time
 from dataclasses import dataclass
 from typing import Optional
+import copy
 
 import supersuit as ss
 import gymnasium as gym
@@ -99,6 +100,11 @@ class Args:
     target_kl: Optional[float] = None
     """the target KL divergence threshold"""
 
+    share_batch_period: int = 3
+    """the number of batches to run individually before sharing with the federated server"""
+    share_batch_tao: float = 0.5
+    """the sharing coefficient when merging network models. A value of 0.0 represents a hard averaging of all the network weights, while 1.0 represents no weight sharing between networks"""
+
     # to be filled in runtime
     batch_size: int = 0
     """the batch size (computed in runtime)"""
@@ -172,6 +178,22 @@ def unbatchify(x, env):
 
     return x
 
+def average_models(models):
+    avg_model = copy.deepcopy(models[0])
+    
+    # Get the state dictionaries of all models
+    state_dicts = [model.state_dict() for model in models]
+    
+    # Calculate the average of each parameter
+    avg_state_dict = {}
+    for key in state_dicts[0].keys():
+        avg_state_dict[key] = sum(sd[key] for sd in state_dicts) / len(state_dicts)
+    
+    # Load the averaged state dictionary into the new model
+    avg_model.load_state_dict(avg_state_dict)
+    
+    return avg_model
+
 if __name__ == "__main__":
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
@@ -234,6 +256,7 @@ if __name__ == "__main__":
     total_episodic_reward = 0
     start_time = time.time()
     unity_error_count = 0
+    steps_since_last_share = 0
     next_obs = batchify_obs(env.reset(), device)
     next_done = torch.zeros(num_agents).to(device)
 
@@ -403,6 +426,24 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/explained_variance(" + str(idx) + ")", explained_var, global_step)
             print("SPS:", int(global_step / (time.time() - start_time)))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+            # Combine networks at the central server
+            steps_since_last_share += 1
+            if (steps_since_last_share >= args.share_batch_period):
+                print("Averaging weights within central server.")
+                steps_since_last_share = 0
+
+                hard_avg_model = average_models(agents)
+                hard_avg_dict = hard_avg_model.state_dict()
+
+                # Scale each agent towards the hard average
+                for agent in agents:
+                    state_dict = agent.state_dict()
+                    new_state_dict = {}
+                    for key in state_dict.keys():
+                        new_state_dict[key] = args.share_batch_tao * state_dict[key] + (1 - args.share_batch_tao) * hard_avg_dict[key]
+                    
+                    agent.load_state_dict(new_state_dict)
     except:
         print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
