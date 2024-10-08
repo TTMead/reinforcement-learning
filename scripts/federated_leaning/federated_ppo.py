@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 import copy
+import timeit
 
 import supersuit as ss
 import gymnasium as gym
@@ -333,6 +334,7 @@ if __name__ == "__main__":
                     episode_start_step = global_step
 
             # bootstrap value if not done
+            optimization_start_time = timeit.default_timer()
             with torch.no_grad():
                 next_value = torch.cat([agent.get_value(next_obs[idx].unsqueeze(0)) for idx, agent in enumerate(agents)], dim=1)
                 advantages = torch.zeros_like(rewards).to(device)
@@ -424,13 +426,13 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/approx_kl(" + str(idx) + ")", approx_kl.item(), global_step)
                 writer.add_scalar("losses/clipfrac(" + str(idx) + ")", np.mean(clipfracs), global_step)
                 writer.add_scalar("losses/explained_variance(" + str(idx) + ")", explained_var, global_step)
-            print("SPS:", int(global_step / (time.time() - start_time)))
+            print("SPS:", int(global_step / (time.time() - start_time)), ", Optimization: {:0.2e}s".format(timeit.default_timer() - optimization_start_time))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
             # Combine networks at the central server
             steps_since_last_share += 1
             if (steps_since_last_share >= args.share_batch_period):
-                print("Averaging weights within central server.")
+                averaging_start_time = timeit.default_timer()
                 steps_since_last_share = 0
 
                 hard_avg_model = average_models(agents)
@@ -444,6 +446,8 @@ if __name__ == "__main__":
                         new_state_dict[key] = args.share_batch_tao * state_dict[key] + (1 - args.share_batch_tao) * hard_avg_dict[key]
                     
                     agent.load_state_dict(new_state_dict)
+                
+                print("Averaging network weights: {:0.2e}s".format(timeit.default_timer() - averaging_start_time))
     except:
         print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
