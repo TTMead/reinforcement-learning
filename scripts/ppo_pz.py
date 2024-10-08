@@ -65,11 +65,11 @@ class Args:
     """if a path is provided, will use the provided compiled Unity executable"""
     no_graphics: bool = False
     """disables graphics from Unity3D environments"""
-    total_timesteps: int = 1000000
+    total_timesteps: int = 2000000
     """total timesteps of the experiments"""
-    learning_rate: float = 3e-4
+    learning_rate: float = 3e-5
     """the learning rate of the optimizer"""
-    num_steps: int = 2048
+    num_steps: int = 8192
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -87,7 +87,7 @@ class Args:
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.01
+    ent_coef: float = 0.1
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
