@@ -21,7 +21,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from ppo_pz import Agent, make_env, batchify_obs, unbatchify, batchify
+from training.ppo_pz import Agent, make_env, batchify_obs, unbatchify, batchify
 import numpy as np
 
 @dataclass
