@@ -44,7 +44,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from agents.jestel_agent import Agent
+from agents.fire_agent import Agent
 
 @dataclass
 class Args:
