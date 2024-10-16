@@ -2,12 +2,12 @@
 Repository containing code generated under the 2023 QDSA Research Grant.
 
 ## RL Implementations
-The PPO training algorithm is branched from the
-[CleanRL](https://github.com/vwxyzjn/cleanrl) library. The trainer accepts PPO
+The PPO training algorithms are branched from the
+[CleanRL](https://github.com/vwxyzjn/cleanrl) library. The trainers accept PPO
 agents with custom network topologies, defined in the `scripts/agents/` directory.
-To use the trainer, install the `requirements.txt` into a local Python `venv` and run,
+To use a trainer, install the `requirements.txt` into a local Python `venv` and run,
 ```bash
-python scripts/ppo.py
+python scripts/training/[training_script].py [args]
 ```
 
 This repository also contains a `UnityToGymWrapper` that wraps a Unity3D 
