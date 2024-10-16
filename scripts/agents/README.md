@@ -13,5 +13,5 @@ Control and Navigation Policies for Multi-robot Navigation via Deep
 Reinforcement Learning" (Jestel, et. al.).
 
 <p align="center">
-  <img src="JestelNetwork.drawio.png"/>
+  <img src="jestel_agent.drawio.png"/>
 </p>
