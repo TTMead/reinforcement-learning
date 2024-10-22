@@ -195,6 +195,21 @@ def average_models(models):
     
     return avg_model
 
+def load_state_dicts(model_path, agents):
+    if (args.model_path):
+        if (args.model_path.endswith('/')):
+            print("Loading pre-existing models inside directory [" + args.model_path + "].")
+
+            model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
+            assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
+
+            for model_path, agent in zip(model_paths, agents):
+                agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+        else:
+            print("Loading pre-existing model [" + args.model_path + "]")
+            for agent in agents:
+                agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
+
 if __name__ == "__main__":
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
@@ -227,14 +242,7 @@ if __name__ == "__main__":
     num_agents = len(env.possible_agents)
 
     agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
-    if (args.model_path):
-        print("Loading pre-existing models inside directory [" + args.model_path + "].")
-
-        model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
-        assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
-
-        for model_path, agent in zip(model_paths, agents):
-            agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+    load_state_dicts(args.model_path, agents)
 
     optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
 
@@ -457,7 +465,7 @@ if __name__ == "__main__":
     for idx, agent in enumerate(agents):
         model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
-    print(f"\nModels saved to {model_path}")
+    print(f"\nModels saved to runs/{run_name}/{args.exp_name}/")
 
     import pickle 
     metadata_path = f"runs/{run_name}/env_metadata.pkl"
