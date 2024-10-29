@@ -28,7 +28,7 @@ from typing import Optional
 import copy
 import timeit
 
-import supersuit as ss
+# import supersuit as ss
 import gymnasium as gym
 import numpy as np
 import torch
@@ -36,9 +36,8 @@ import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
-from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from mlagents_envs.envs.unity_parallel_env import UnityParallelEnv
+
+from godot_rl.wrappers.petting_zoo_wrapper import GDRLPettingZooEnv
 
 import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,16 +55,12 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
     time_scale: float = 20.0
     """for Unity environments, sets the simulator timescale"""
     model_path: Optional[str] = None
     """if a path is provided, will initialise the agent with the weights/biases of the model"""
 
     # Algorithm specific arguments
-    env_id: str = "unity"
-    """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
     file_path: Optional[str] = None
     """if a path is provided, will use the provided compiled Unity executable"""
     no_graphics: bool = False
@@ -114,25 +109,14 @@ class Args:
     num_updates: int = 0
     """the number of times the policy will update (computed in runtime)"""
 
-def make_unity_env(editor_timescale, file_path, no_graphics, seed) -> UnityEnvironment:
-    config_channel = EngineConfigurationChannel()
-    if (not file_path):
-        print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
-    env = UnityEnvironment(seed=seed, file_name=file_path, no_graphics=no_graphics, side_channels=[config_channel])
-    config_channel.set_configuration_parameters(time_scale=editor_timescale)
-    env.reset()
-    return env
 
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path, no_graphics, seed):
-    if (env_id == "unity"):
-        unity_env = make_unity_env(time_scale, file_path, no_graphics, seed)
-        env = UnityParallelEnv(unity_env)
-    else:
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
+def make_env(run_name, time_scale, gamma, file_path, no_graphics, seed):
+    config = {
+        "env_path": file_path,
+        "show_window": no_graphics,
+        "speedup": time_scale
+    }
+    env = GDRLPettingZooEnv(config=config, seed=seed)
 
     # For Unity PettingZoo wrapper, reset must be called to populate some env properties
     env.reset()
@@ -148,9 +132,9 @@ def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path,
                     shape=old_space.shape,
                     dtype=old_space.dtype)
 
-    env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
-    env = ss.clip_actions_v0(env)
-    env = ss.normalize_obs_v0(env)
+    # env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
+    # env = ss.clip_actions_v0(env)
+    # env = ss.normalize_obs_v0(env)
     # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
     # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
     # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
@@ -212,7 +196,7 @@ def load_state_dicts(model_path, agents):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
@@ -228,7 +212,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
+    env = make_env(run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
 
     from gym.spaces.box import Box as legacy_box_type
     assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
