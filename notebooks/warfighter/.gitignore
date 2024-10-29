@@ -1,5 +1,0 @@
-# Ignore ml-learn outputs
-results
-
-# Ignore stable-baseline3 outputs
-models/

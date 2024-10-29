@@ -21,7 +21,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from training.ppo_pz import Agent, make_env, batchify_obs, unbatchify, batchify
+from training.ppo_federated import Agent, make_env, batchify_obs, unbatchify, batchify
 import numpy as np
 
 @dataclass
@@ -58,29 +58,37 @@ if __name__ == "__main__":
 
     action_space = env.action_space(env.possible_agents[0])
     observation_space = env.observation_space(env.possible_agents[0])
-    agent = Agent(observation_space, action_space).to(device)
+    num_agents = len(env.possible_agents)
 
     # Load model weights from disk
-    agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
-    agent.eval()
+    agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
+    print("Loading pre-existing models inside directory [" + args.model_path + "].")
+
+    model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
+    assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
+
+    for model_path, agent in zip(model_paths, agents):
+        agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+
 
     # Run evaluation
-    num_agents = len(env.possible_agents)
     total_episodic_reward = 0
     unity_error_count = 0
     global_step = 0
-    obs = batchify_obs(env.reset(), device)
+    next_obs = batchify_obs(env.reset(), device)
     episode_count = 0
     episodic_rewards = []
     
     while episode_count < args.eval_episodes:
         global_step += 1
 
-        actions, _, _, _ = agent.get_action_and_value(torch.Tensor(obs).to(device))
-        obs_unbatched, reward, next_done, infos = env.step(unbatchify(actions, env))
+        actions = torch.empty((0, 2)).to(device)
+        with torch.no_grad():
+            for idx, agent in enumerate(agents):
+                action, _, _, _ = agent.get_action_and_value(next_obs[idx].unsqueeze(0))
+                actions = torch.cat((actions, action))
 
-        obs = batchify_obs(obs_unbatched, device)
-        next_done = batchify(next_done, device).long()
+        next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(actions, env))
 
         # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
         # with indicating 'done' agents in parallel pettingzoo environments)
@@ -88,7 +96,12 @@ if __name__ == "__main__":
         for agent_id, agent_reward in reward.items():
             if agent_reward == dead_agent_reward:
                 reward[agent_id] = 0
+        
 
+        next_obs = batchify_obs(next_obs_unbatched, device)
+        next_done = batchify(next_done, device).long()
+
+        # Update rewards
         total_episodic_reward += batchify(reward, device).view(-1)
 
         # Unity will sometimes request both a decision step and termination step after stepping the environment.

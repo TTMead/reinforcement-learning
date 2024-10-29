@@ -23,7 +23,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
 from unity_gymnasium_env import UnityToGymWrapper
-from ppo import Agent, make_env
+from training.ppo import Agent, make_env
 from normalize import MinMaxNormalizeObservation
 import numpy as np
 

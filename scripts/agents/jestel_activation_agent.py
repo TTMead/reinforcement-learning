@@ -21,6 +21,7 @@ from torch.distributions.normal import Normal
 class JestelNetwork(nn.Module):
     def __init__(self, output_size):
         super(JestelNetwork, self).__init__()
+        self.output_size = output_size
         
         lidar_count = 270
         self.lidar_stream = nn.Sequential(
@@ -54,6 +55,9 @@ class JestelNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(384, output_size)
         )
+
+        self.linear_vel_activation = nn.Sigmoid()
+        self.angular_vel_activation = nn.Tanh()
     
     def forward(self, raw_observation):
         batch_size = raw_observation.shape[0]
@@ -81,13 +85,21 @@ class JestelNetwork(nn.Module):
         combined = torch.cat((out1, out2, out3, out4), dim=1)
         assert (combined.shape == (batch_size, 336)), "Concatenated hidden layer should have a shape of (batch_size, 336), received " + str(combined.shape)
 
-        output = self.output_stream(combined)
+        
+
+        # Apply activations for actor
+        if (self.output_size == 2):
+            output = torch.cat([self.linear_vel_activation(combined[:, 0]).unsqueeze(1),
+                                self.angular_vel_activation(combined[:, 1]).unsqueeze(1)], dim=1)
+        else:
+            output = self.output_stream(combined)
+
         return output
 
 class Agent(nn.Module):
     def __init__(self, observation_space, action_space):
-        assert (observation_space.shape[0] == Agent.stacked_observation_size()), ("The Jestel implementation requires an observation space of " + str(Agent.stacked_observation_size()) + " continuous values, received observation of shape: " + str(observation_space.shape[0]))
-        assert (action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(action_space.shape[0]))
+        assert (observation_space.shape[0] == Agent.stacked_observation_size()), ("The Jestel implementation requires an observation space of " + str(Agent.stacked_observation_size()) + " continuous values, received observation of shape: " + str(envs.single_observation_space.shape))
+        assert (action_space.shape[0] == Agent.action_size()), ("The Jestel implementation requires an action space of " + str(Agent.action_size()) + " continuous values, received action of shape: " + str(envs.single_action_space.shape))
 
         super().__init__()
 
