@@ -43,7 +43,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from agents.fire_agent import Agent
+from agents.jestel_agent import Agent
 
 @dataclass
 class Args:
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     # for agent in env.possible_agents:
     #     env.action_space(agent).dtype = np.float32
 
-    action_space = env.action_space(env.possible_agents[0])
+    action_space = env.action_space(env.possible_agents[0])[0]
     observation_space = env.observation_space(env.possible_agents[0])["obs"]
 
     num_agents = len(env.possible_agents)
