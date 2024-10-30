@@ -119,18 +119,17 @@ def make_env(run_name, time_scale, gamma, file_path, no_graphics, seed):
     env = GDRLPettingZooEnv(config=config, seed=seed)
 
     # For Unity PettingZoo wrapper, reset must be called to populate some env properties
-    env.reset()
-    env.metadata = {}
-    assert (len(env._env.behavior_specs) == 1), ("Only single-team environments are currently supported, received " + str(len(env._env.behavior_specs)))
+    # env.reset()
+    # env.metadata = {}
 
     # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
-    old_space = list(env._observation_spaces.values())[0]
-    obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
-    env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
-                    low=obs_range[:,0],
-                    high=obs_range[:,1],
-                    shape=old_space.shape,
-                    dtype=old_space.dtype)
+    # old_space = list(env._observation_spaces.values())[0]
+    # obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
+    # env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
+    #                 low=obs_range[:,0],
+    #                 high=obs_range[:,1],
+    #                 shape=old_space.shape,
+    #                 dtype=old_space.dtype)
 
     # env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
     # env = ss.clip_actions_v0(env)
@@ -214,15 +213,16 @@ if __name__ == "__main__":
     # env setup
     env = make_env(run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
 
-    from gym.spaces.box import Box as legacy_box_type
-    assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
+    # from gym.spaces.box import Box as legacy_box_type
+    # assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
 
     # Convert all action spaces to float32 due to Unity ML-Agents bug [https://github.com/Unity-Technologies/ml-agents/issues/5976]
-    for agent in env.possible_agents:
-        env.action_space(agent).dtype = np.float32
+    # for agent in env.possible_agents:
+    #     env.action_space(agent).dtype = np.float32
 
     action_space = env.action_space(env.possible_agents[0])
-    observation_space = env.observation_space(env.possible_agents[0])
+    observation_space = env.observation_space(env.possible_agents[0])["obs"]
+
     num_agents = len(env.possible_agents)
 
     agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
