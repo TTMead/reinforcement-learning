@@ -141,10 +141,15 @@ def make_env(run_name, time_scale, gamma, file_path, no_graphics, seed):
 
 def batchify_obs(obs, device):
     """Converts PZ style observations to batch of torch arrays."""
-    obs = np.stack([obs[a] for a in obs], axis=0) # convert to list of np arrays
-    # obs = obs.transpose(0, -1, 1, 2) # transpose to be (batch, channel, height, width)
-    obs = torch.tensor(obs).to(device) # convert to torch
-    return obs
+    batched_obs = np.array([]).reshape(0, Agent.stacked_observation_size())
+    for agent_obs_dict_values in obs.values():
+        agent_obs = (np.array(list(agent_obs_dict_values.values())))
+
+        assert (agent_obs.shape[1] == Agent.stacked_observation_size()), "Received incorrect Agent stacked observation size"
+        batched_obs = np.concatenate((batched_obs, agent_obs), axis=0)
+    
+    batched_obs = torch.tensor(batched_obs, dtype=torch.float32).to(device)
+    return batched_obs
 
 def batchify(x, device):
     """Converts PZ style returns to batch of torch arrays."""
@@ -158,8 +163,7 @@ def batchify(x, device):
 def unbatchify(x, env):
     """Converts np array to PZ style arguments."""
     x = x.cpu().numpy()
-    x = {a: x[i] for i, a in enumerate(env.possible_agents)}
-
+    x = {a: np.expand_dims(x[i], 0) for i, a in enumerate(env.possible_agents)}
     return x
 
 def average_models(models):
@@ -248,9 +252,10 @@ if __name__ == "__main__":
     episode_start_step = 0
     total_episodic_reward = 0
     start_time = time.time()
-    unity_error_count = 0
     steps_since_last_share = 0
-    next_obs = batchify_obs(env.reset(), device)
+    obs, infos = env.reset()
+    next_obs = batchify_obs(obs, device)
+
     next_done = torch.zeros(num_agents).to(device)
 
     try:
@@ -282,7 +287,7 @@ if __name__ == "__main__":
                 logprobs[step] = new_logprobs
 
                 # Step the environment with the batched policy actions
-                next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(new_actions, env))
+                next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(new_actions, env))
 
                 # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
                 # with indicating 'done' agents in parallel pettingzoo environments)
@@ -302,26 +307,18 @@ if __name__ == "__main__":
                 rewards[step] = batchify(reward, device).view(-1)
                 total_episodic_reward += rewards[step]
 
-                # Unity will sometimes request both a decision step and termination step after stepping the environment.
-                # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
-                # occurs, assume the level has completed.
-                unity_error_occured = (len(env.aec_env.agents) > num_agents)
-                if unity_error_occured:
-                    print("Reseting early due to Unity error")
-                    unity_error_count += 1
-
                 # Check for episode completion
-                if (torch.prod(next_done) == 1 or unity_error_occured):
+                if (torch.prod(next_done) == 1):
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_reward):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
                     writer.add_scalar("charts/mean_episodic_return", torch.mean(total_episodic_reward), global_step)
                     writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
-                    writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
 
-                    next_obs = batchify_obs(env.reset(), device)
+                    obs, infos = env.reset()
+                    next_obs = batchify_obs(obs, device)
                     total_episodic_reward = 0
                     episode_start_step = global_step
 
