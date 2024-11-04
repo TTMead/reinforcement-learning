@@ -56,13 +56,13 @@ class Args:
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
     time_scale: float = 20.0
-    """for Unity environments, sets the simulator timescale"""
+    """sets the simulator timescale"""
     model_path: Optional[str] = None
     """if a path is provided, will initialise the agent with the weights/biases of the model"""
 
     # Algorithm specific arguments
     file_path: Optional[str] = None
-    """if a path is provided, will use the provided compiled Unity executable"""
+    """if a path is provided, will use the provided compiled executable"""
     no_graphics: bool = False
     """disables graphics from Unity3D environments"""
     total_timesteps: int = 2000000
@@ -220,10 +220,6 @@ if __name__ == "__main__":
     # from gym.spaces.box import Box as legacy_box_type
     # assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
 
-    # Convert all action spaces to float32 due to Unity ML-Agents bug [https://github.com/Unity-Technologies/ml-agents/issues/5976]
-    # for agent in env.possible_agents:
-    #     env.action_space(agent).dtype = np.float32
-
     action_space = env.action_space(env.possible_agents[0])[0]
     observation_space = env.observation_space(env.possible_agents[0])["obs"]
 
@@ -253,9 +249,7 @@ if __name__ == "__main__":
     total_episodic_reward = 0
     start_time = time.time()
     steps_since_last_share = 0
-    obs, infos = env.reset()
-    next_obs = batchify_obs(obs, device)
-
+    next_obs = batchify_obs(env.reset()[0], device)
     next_done = torch.zeros(num_agents).to(device)
 
     try:
@@ -289,17 +283,6 @@ if __name__ == "__main__":
                 # Step the environment with the batched policy actions
                 next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(new_actions, env))
 
-                # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
-                # with indicating 'done' agents in parallel pettingzoo environments)
-                dead_agent_reward = -99.0
-                for agent_id, agent_reward in reward.items():
-                    if agent_reward == dead_agent_reward:
-                        # Assign any dead agents as 'done'
-                        next_done[agent_id] = True
-
-                        # GAE calculations assume a reward of 0 for dead agents
-                        reward[agent_id] = 0
-
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
 
@@ -317,8 +300,7 @@ if __name__ == "__main__":
                     writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
                     print(episodic_msg)
 
-                    obs, infos = env.reset()
-                    next_obs = batchify_obs(obs, device)
+                    next_obs = batchify_obs(env.reset()[0], device)
                     total_episodic_reward = 0
                     episode_start_step = global_step
 
