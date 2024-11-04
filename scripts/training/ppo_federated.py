@@ -399,8 +399,6 @@ if __name__ == "__main__":
         print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
 
-    env.close()
-
     for idx, agent in enumerate(agents):
         model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
@@ -420,4 +418,5 @@ if __name__ == "__main__":
     with open(metadata_path, 'w', encoding='utf-8') as file:
         json.dump(env.metadata, file, ensure_ascii=False, indent=4)
 
+    env.close()
     writer.close()
