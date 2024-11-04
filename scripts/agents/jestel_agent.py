@@ -143,8 +143,8 @@ class Agent(nn.Module):
         ranges = np.vstack([ranges, [0, 30]])
 
         # O_v (robot velocities) scan ranges
-        ranges = np.vstack([ranges, [-1.1, 2.1]])
-        ranges = np.vstack([ranges, [-2.1, 2.1]])
+        ranges = np.vstack([ranges, [-10, 10]])
+        ranges = np.vstack([ranges, [-10, 10]])
 
         return ranges
 

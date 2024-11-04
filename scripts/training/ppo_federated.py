@@ -28,7 +28,6 @@ from typing import Optional
 import copy
 import timeit
 
-# import supersuit as ss
 import gymnasium as gym
 import numpy as np
 import torch
@@ -43,6 +42,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from normalize import normalize_obs
 from agents.jestel_agent import Agent
 
 @dataclass
@@ -116,31 +116,10 @@ def make_env(run_name, time_scale, gamma, file_path, no_graphics, seed):
         "show_window": no_graphics,
         "speedup": time_scale
     }
-    env = GDRLPettingZooEnv(config=config, seed=seed)
-
-    # For Unity PettingZoo wrapper, reset must be called to populate some env properties
-    # env.reset()
-    # env.metadata = {}
-
-    # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
-    # old_space = list(env._observation_spaces.values())[0]
-    # obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
-    # env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
-    #                 low=obs_range[:,0],
-    #                 high=obs_range[:,1],
-    #                 shape=old_space.shape,
-    #                 dtype=old_space.dtype)
-
-    # env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
-    # env = ss.clip_actions_v0(env)
-    # env = ss.normalize_obs_v0(env)
-    # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-    # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-    return env
+    return GDRLPettingZooEnv(config=config, seed=seed)
 
 def batchify_obs(obs, device):
-    """Converts PZ style observations to batch of torch arrays."""
+    """Converts dict style observations to a multi-dimensional torch array."""
     batched_obs = np.array([]).reshape(0, Agent.stacked_observation_size())
     for agent_obs_dict_values in obs.values():
         agent_obs = (np.array(list(agent_obs_dict_values.values())))
@@ -148,6 +127,7 @@ def batchify_obs(obs, device):
         assert (agent_obs.shape[1] == Agent.stacked_observation_size()), "Received incorrect Agent stacked observation size"
         batched_obs = np.concatenate((batched_obs, agent_obs), axis=0)
     
+    batched_obs = normalize_obs(batched_obs, Agent.get_observation_range())
     batched_obs = torch.tensor(batched_obs, dtype=torch.float32).to(device)
     return batched_obs
 
@@ -206,7 +186,7 @@ if __name__ == "__main__":
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
 
-    # TRY NOT TO MODIFY: seeding
+    # Seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -214,11 +194,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup
     env = make_env(run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
-
-    # from gym.spaces.box import Box as legacy_box_type
-    # assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
 
     action_space = env.action_space(env.possible_agents[0])[0]
     observation_space = env.observation_space(env.possible_agents[0])["obs"]
@@ -243,7 +219,7 @@ if __name__ == "__main__":
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_updates = args.total_timesteps // args.batch_size
 
-    # TRY NOT TO MODIFY: start the game
+    # Start the game
     global_step = 0
     episode_start_step = 0
     total_episodic_reward = 0
