@@ -194,7 +194,6 @@ if __name__ == "__main__":
     episode_start_step = 0
     total_episodic_reward = 0
     start_time = time.time()
-    unity_error_count = 0
     next_obs = batchify_obs(env.reset()[0], device)
     next_done = torch.zeros(num_agents).to(device)
 
@@ -243,7 +242,6 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
                     writer.add_scalar("charts/mean_episodic_return", torch.mean(total_episodic_reward), global_step)
                     writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
-                    writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
 
                     next_obs = batchify_obs(env.reset()[0], device)
