@@ -23,24 +23,24 @@ import os
 import random
 import traceback
 import time
-from dataclasses import dataclass
-from typing import Optional
 import timeit
-
-import numpy as np
 import torch
+import tyro
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-import tyro
+from dataclasses import dataclass
+from typing import Optional
 from torch.utils.tensorboard import SummaryWriter
-from godot_rl.wrappers.petting_zoo_wrapper import GDRLPettingZooEnv
 
 import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from normalize import normalize_obs
+from batch_helpers import batchify_obs, batchify, unbatchify
 from agents.jestel_agent import Agent
+from godot import make_env
+
 
 @dataclass
 class Args:
@@ -101,32 +101,6 @@ class Args:
     num_updates: int = 0
     """the number of times the policy will update (computed in runtime)"""
 
-def make_env(time_scale, file_path, no_graphics, seed):
-    config = {
-        "env_path": file_path,
-        "show_window": no_graphics,
-        "speedup": time_scale
-    }
-    return GDRLPettingZooEnv(config=config, seed=seed)
-
-def batchify_obs(obs, device):
-    """Converts dict style observations to a multi-dimensional torch array."""
-    obs = np.stack([obs[a]['obs'] for a in obs], axis=0)
-    obs = normalize_obs(obs, Agent.get_observation_range())
-    obs = torch.tensor(obs, dtype=torch.float32).to(device)
-    return obs
-
-def batchify(x, device):
-    """Converts dict style returns and dones to batch of torch arrays."""
-    x = np.stack([x[a] for a in x], axis=0) # convert to list of np arrays
-    x = torch.tensor(x).to(device)
-    return x
-
-def unbatchify(x, env):
-    """Converts torch array of returns and dones to dict style."""
-    x = x.cpu().numpy()
-    x = {a: np.expand_dims(x[i], 0) for i, a in enumerate(env.possible_agents)}
-    return x
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -175,7 +149,7 @@ if __name__ == "__main__":
     episode_start_step = 0
     total_episodic_reward = 0
     start_time = time.time()
-    next_obs = batchify_obs(env.reset()[0], device)
+    next_obs = batchify_obs(env.reset()[0], device, Agent)
     next_done = torch.zeros(num_agents).to(device)
 
     try:
@@ -202,7 +176,7 @@ if __name__ == "__main__":
                 # Step the environment with the policy's chosen actions
                 next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(action, env))
 
-                next_obs = batchify_obs(next_obs_unbatched, device)
+                next_obs = batchify_obs(next_obs_unbatched, device, Agent)
                 next_done = batchify(next_done, device).long()
 
                 rewards[step] = batchify(reward, device).view(-1)
@@ -218,7 +192,7 @@ if __name__ == "__main__":
                     writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
                     print(episodic_msg)
 
-                    next_obs = batchify_obs(env.reset()[0], device)
+                    next_obs = batchify_obs(env.reset()[0], device, Agent)
                     total_episodic_reward = 0
                     episode_start_step = global_step
 

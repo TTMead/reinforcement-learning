@@ -1,7 +1,10 @@
-"""Functions for normalizing actions and observations."""
+'''
+Functions for normalizing actions and observations
+'''
 
 import numpy as np
 import warnings
+
 
 def normalize_single_obs(obs, ranges):
     # Tile the ranges to account for stacked observations
@@ -19,6 +22,7 @@ def normalize_single_obs(obs, ranges):
 
     # Normalize
     return (obs - mins) / (maxs - mins)
+
 
 def normalize_obs(obs, ranges):
     for i in range(obs.shape[0]):
