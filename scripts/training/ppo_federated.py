@@ -9,8 +9,7 @@ prohibited. Offenders will be held liable for the payment of damages.
 """
 
 '''
-Trains a team of PPO agents using a Unity3D environment passed through the
-ML-Agents PettingZoo wrapper.
+Trains a team of PPO agents in a pettingzoo style environment.
 
 Utilises a 'federated learning' approach where during rollout each agent runs
 its own training script that periodically shares the network weights to a
