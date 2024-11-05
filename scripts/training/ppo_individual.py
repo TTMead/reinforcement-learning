@@ -23,23 +23,21 @@ import traceback
 import time
 from dataclasses import dataclass
 from typing import Optional
+import timeit
 
-import supersuit as ss
-import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
-from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from mlagents_envs.envs.unity_parallel_env import UnityParallelEnv
+from godot_rl.wrappers.petting_zoo_wrapper import GDRLPettingZooEnv
 
 import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from normalize import normalize_obs
 from agents.jestel_agent import Agent
 
 @dataclass
@@ -52,20 +50,16 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
     time_scale: float = 20.0
-    """for Unity environments, sets the simulator timescale"""
+    """sets the simulator timescale"""
     model_path: Optional[str] = None
     """if a path is provided, will initialise the agent with the weights/biases of the model"""
 
     # Algorithm specific arguments
-    env_id: str = "unity"
-    """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
     file_path: Optional[str] = None
-    """if a path is provided, will use the provided compiled Unity executable"""
+    """if a path is provided, will use the provided compiled executable"""
     no_graphics: bool = False
-    """disables graphics from Unity3D environments"""
+    """disables graphics for compiled environments"""
     total_timesteps: int = 2000000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-5
@@ -105,81 +99,66 @@ class Args:
     num_updates: int = 0
     """the number of times the policy will update (computed in runtime)"""
 
-def make_unity_env(editor_timescale, file_path, no_graphics, seed) -> UnityEnvironment:
-    config_channel = EngineConfigurationChannel()
-    if (not file_path):
-        print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
-    env = UnityEnvironment(seed=seed, file_name=file_path, no_graphics=no_graphics, side_channels=[config_channel])
-    config_channel.set_configuration_parameters(time_scale=editor_timescale)
-    env.reset()
-    return env
-
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path, no_graphics, seed):
-    if (env_id == "unity"):
-        unity_env = make_unity_env(time_scale, file_path, no_graphics, seed)
-        env = UnityParallelEnv(unity_env)
-    else:
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
-
-    # For Unity PettingZoo wrapper, reset must be called to populate some env properties
-    env.reset()
-    env.metadata = {}
-    assert (len(env._env.behavior_specs) == 1), ("Only single-team environments are currently supported, received " + str(len(env._env.behavior_specs)))
-
-    # Add finite observation range to env from Agent (so normalize_obs_v0 will work)
-    old_space = list(env._observation_spaces.values())[0]
-    obs_range = np.tile(Agent.get_observation_range(), (Agent.stack_size(), 1))
-    env._observation_spaces[list(env._observation_spaces.keys())[0]] = gym.spaces.Box(
-                    low=obs_range[:,0],
-                    high=obs_range[:,1],
-                    shape=old_space.shape,
-                    dtype=old_space.dtype)
-
-    env = ss.flatten_v0(env)  # deal with dm_control's Dict observation space
-    env = ss.clip_actions_v0(env)
-    env = ss.normalize_obs_v0(env)
-    # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-    # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-    return env
+def make_env(time_scale, file_path, no_graphics, seed):
+    config = {
+        "env_path": file_path,
+        "show_window": no_graphics,
+        "speedup": time_scale
+    }
+    return GDRLPettingZooEnv(config=config, seed=seed)
 
 def batchify_obs(obs, device):
-    """Converts PZ style observations to batch of torch arrays."""
-    obs = np.stack([obs[a] for a in obs], axis=0) # convert to list of np arrays
-    # obs = obs.transpose(0, -1, 1, 2) # transpose to be (batch, channel, height, width)
-    obs = torch.tensor(obs).to(device) # convert to torch
-    return obs
+    """Converts dict style observations to a multi-dimensional torch array."""
+    batched_obs = np.array([]).reshape(0, Agent.stacked_observation_size())
+    for agent_obs_dict_values in obs.values():
+        agent_obs = (np.array(list(agent_obs_dict_values.values())))
+
+        assert (agent_obs.shape[1] == Agent.stacked_observation_size()), "Received incorrect Agent stacked observation size"
+        batched_obs = np.concatenate((batched_obs, agent_obs), axis=0)
+    
+    batched_obs = normalize_obs(batched_obs, Agent.get_observation_range())
+    batched_obs = torch.tensor(batched_obs, dtype=torch.float32).to(device)
+    return batched_obs
 
 def batchify(x, device):
-    """Converts PZ style returns to batch of torch arrays."""
-    # convert to list of np arrays
-    x = np.stack([x[a] for a in x], axis=0)
-    # convert to torch
+    """Converts dict style returns and dones to batch of torch arrays."""
+    x = np.stack([x[a] for a in x], axis=0) # convert to list of np arrays
     x = torch.tensor(x).to(device)
-
     return x
 
 def unbatchify(x, env):
-    """Converts np array to PZ style arguments."""
+    """Converts torch array of returns and dones to dict style."""
     x = x.cpu().numpy()
-    x = {a: x[i] for i, a in enumerate(env.possible_agents)}
-
+    x = {a: np.expand_dims(x[i], 0) for i, a in enumerate(env.possible_agents)}
     return x
+
+def load_state_dicts(model_path, agents):
+    """Loads the state dict of each agent with a model filepath or filepath to 
+    a folder containing the models"""
+    if (args.model_path):
+        if (args.model_path.endswith('/')):
+            print("Loading pre-existing models inside directory [" + args.model_path + "].")
+
+            model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
+            assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
+
+            for model_path, agent in zip(model_paths, agents):
+                agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+        else:
+            print("Loading pre-existing model [" + args.model_path + "]")
+            for agent in agents:
+                agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
 
-    # TRY NOT TO MODIFY: seeding
+    # Seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -187,29 +166,13 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup
-    env = make_env(args.env_id, 0, args.capture_video, run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
+    env = make_env(args.time_scale, args.file_path, args.no_graphics, args.seed)
+    action_space = env.action_space(env.possible_agents[0])[0]
+    observation_space = env.observation_space(env.possible_agents[0])["obs"]
 
-    from gym.spaces.box import Box as legacy_box_type
-    assert all(isinstance(env.action_space(agent), legacy_box_type) for agent in env.possible_agents), "only continuous action space is supported"
-
-    # Convert all action spaces to float32 due to Unity ML-Agents bug [https://github.com/Unity-Technologies/ml-agents/issues/5976]
-    for agent in env.possible_agents:
-        env.action_space(agent).dtype = np.float32
-
-    action_space = env.action_space(env.possible_agents[0])
-    observation_space = env.observation_space(env.possible_agents[0])
     num_agents = len(env.possible_agents)
-
     agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
-    if (args.model_path):
-        print("Loading pre-existing models inside directory [" + args.model_path + "].")
-
-        model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
-        assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
-
-        for model_path, agent in zip(model_paths, agents):
-            agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+    load_state_dicts(args.model_path, agents)
 
     optimizers = [optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5) for agent in agents]
 
@@ -226,13 +189,13 @@ if __name__ == "__main__":
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_updates = args.total_timesteps // args.batch_size
 
-    # TRY NOT TO MODIFY: start the game
+    # Start the game
     global_step = 0
     episode_start_step = 0
     total_episodic_reward = 0
     start_time = time.time()
     unity_error_count = 0
-    next_obs = batchify_obs(env.reset(), device)
+    next_obs = batchify_obs(env.reset()[0], device)
     next_done = torch.zeros(num_agents).to(device)
 
     try:
@@ -264,36 +227,16 @@ if __name__ == "__main__":
                 logprobs[step] = new_logprobs
 
                 # Step the environment with the batched policy actions
-                next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(new_actions, env))
-
-                # A reward of -99.0 indicates a dead agent (workaround for Unity issues 
-                # with indicating 'done' agents in parallel pettingzoo environments)
-                dead_agent_reward = -99.0
-                for agent_id, agent_reward in reward.items():
-                    if agent_reward == dead_agent_reward:
-                        # Assign any dead agents as 'done'
-                        next_done[agent_id] = True
-
-                        # GAE calculations assume a reward of 0 for dead agents
-                        reward[agent_id] = 0
+                next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(new_actions, env))
 
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
 
-                # Update rewards
                 rewards[step] = batchify(reward, device).view(-1)
                 total_episodic_reward += rewards[step]
 
-                # Unity will sometimes request both a decision step and termination step after stepping the environment.
-                # This causes an error as PettingZoo==1.15.0 API assumes the same agent will not appear twice. If this
-                # occurs, assume the level has completed.
-                unity_error_occured = (len(env.aec_env.agents) > num_agents)
-                if unity_error_occured:
-                    print("Reseting early due to Unity error")
-                    unity_error_count += 1
-
                 # Check for episode completion
-                if (torch.prod(next_done) == 1 or unity_error_occured):
+                if (torch.prod(next_done) == 1):
                     episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
                     for agent_index, agent_reward in enumerate(total_episodic_reward):
                         episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
@@ -303,11 +246,12 @@ if __name__ == "__main__":
                     writer.add_scalar("charts/unity_error_count", unity_error_count, global_step)
                     print(episodic_msg)
 
-                    next_obs = batchify_obs(env.reset(), device)
+                    next_obs = batchify_obs(env.reset()[0], device)
                     total_episodic_reward = 0
                     episode_start_step = global_step
 
             # bootstrap value if not done
+            optimization_start_time = timeit.default_timer()
             with torch.no_grad():
                 next_value = torch.cat([agent.get_value(next_obs[idx].unsqueeze(0)) for idx, agent in enumerate(agents)], dim=1)
                 advantages = torch.zeros_like(rewards).to(device)
@@ -399,31 +343,16 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/approx_kl(" + str(idx) + ")", approx_kl.item(), global_step)
                 writer.add_scalar("losses/clipfrac(" + str(idx) + ")", np.mean(clipfracs), global_step)
                 writer.add_scalar("losses/explained_variance(" + str(idx) + ")", explained_var, global_step)
-            print("SPS:", int(global_step / (time.time() - start_time)))
+            print("SPS:", int(global_step / (time.time() - start_time)), ", Optimization: {:0.2e}s".format(timeit.default_timer() - optimization_start_time))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
     except:
         print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
-
-    env.close()
 
     for idx, agent in enumerate(agents):
         model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
     print(f"\nModels saved to {model_path}")
 
-    import pickle 
-    metadata_path = f"runs/{run_name}/env_metadata.pkl"
-    with open(metadata_path, 'wb') as metadata_file:
-        pickle.dump(env.metadata, metadata_file)
-
-    import json, dataclasses
-    metadata_path = f"runs/{run_name}/env_metadata.json"
-    json_path = f"runs/{run_name}/args.json"
-    with open(json_path, 'w', encoding='utf-8') as file:
-        json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
-
-    with open(metadata_path, 'w', encoding='utf-8') as file:
-        json.dump(env.metadata, file, ensure_ascii=False, indent=4)
-
+    env.close()
     writer.close()

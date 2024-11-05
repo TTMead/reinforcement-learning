@@ -28,14 +28,12 @@ from typing import Optional
 import copy
 import timeit
 
-import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.utils.tensorboard import SummaryWriter
-
 from godot_rl.wrappers.petting_zoo_wrapper import GDRLPettingZooEnv
 
 import sys, os
@@ -64,7 +62,7 @@ class Args:
     file_path: Optional[str] = None
     """if a path is provided, will use the provided compiled executable"""
     no_graphics: bool = False
-    """disables graphics from Unity3D environments"""
+    """disables graphics for compiled environments"""
     total_timesteps: int = 2000000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-5
@@ -110,7 +108,7 @@ class Args:
     """the number of times the policy will update (computed in runtime)"""
 
 
-def make_env(run_name, time_scale, gamma, file_path, no_graphics, seed):
+def make_env(time_scale, file_path, no_graphics, seed):
     config = {
         "env_path": file_path,
         "show_window": no_graphics,
@@ -132,16 +130,13 @@ def batchify_obs(obs, device):
     return batched_obs
 
 def batchify(x, device):
-    """Converts PZ style returns to batch of torch arrays."""
-    # convert to list of np arrays
-    x = np.stack([x[a] for a in x], axis=0)
-    # convert to torch
+    """Converts dict style returns and dones to batch of torch arrays."""
+    x = np.stack([x[a] for a in x], axis=0) # convert to list of np arrays
     x = torch.tensor(x).to(device)
-
     return x
 
 def unbatchify(x, env):
-    """Converts np array to PZ style arguments."""
+    """Converts torch array of returns and dones to dict style."""
     x = x.cpu().numpy()
     x = {a: np.expand_dims(x[i], 0) for i, a in enumerate(env.possible_agents)}
     return x
@@ -163,6 +158,8 @@ def average_models(models):
     return avg_model
 
 def load_state_dicts(model_path, agents):
+    """Loads the state dict of each agent with a model filepath or filepath to 
+    a folder containing the models"""
     if (args.model_path):
         if (args.model_path.endswith('/')):
             print("Loading pre-existing models inside directory [" + args.model_path + "].")
@@ -194,13 +191,11 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    env = make_env(run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics, args.seed)
-
+    env = make_env(args.time_scale, args.file_path, args.no_graphics, args.seed)
     action_space = env.action_space(env.possible_agents[0])[0]
     observation_space = env.observation_space(env.possible_agents[0])["obs"]
 
     num_agents = len(env.possible_agents)
-
     agents = [Agent(observation_space, action_space).to(device) for i in range(num_agents)] 
     load_state_dicts(args.model_path, agents)
 
@@ -262,7 +257,6 @@ if __name__ == "__main__":
                 next_obs = batchify_obs(next_obs_unbatched, device)
                 next_done = batchify(next_done, device).long()
 
-                # Update rewards
                 rewards[step] = batchify(reward, device).view(-1)
                 total_episodic_reward += rewards[step]
 
@@ -403,20 +397,6 @@ if __name__ == "__main__":
         model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
     print(f"\nModels saved to runs/{run_name}/{args.exp_name}/")
-
-    import pickle 
-    metadata_path = f"runs/{run_name}/env_metadata.pkl"
-    with open(metadata_path, 'wb') as metadata_file:
-        pickle.dump(env.metadata, metadata_file)
-
-    import json, dataclasses
-    metadata_path = f"runs/{run_name}/env_metadata.json"
-    json_path = f"runs/{run_name}/args.json"
-    with open(json_path, 'w', encoding='utf-8') as file:
-        json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
-
-    with open(metadata_path, 'w', encoding='utf-8') as file:
-        json.dump(env.metadata, file, ensure_ascii=False, indent=4)
 
     env.close()
     writer.close()
