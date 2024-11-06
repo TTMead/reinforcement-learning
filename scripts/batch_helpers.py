@@ -30,6 +30,11 @@ def unbatchify(x, env):
     return x
 
 
+def clip_actions(actions):
+    """Clips a set of actions to the range of [-1.0, 1.0]"""
+    return torch.clip(actions, -1.0, 1.0)
+
+
 def load_state_dicts(model_path, agents, device):
     """Loads the state dict of each agent with a model filepath or filepath to 
     a folder containing the models"""

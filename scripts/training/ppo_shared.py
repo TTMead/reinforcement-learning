@@ -36,7 +36,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from batch_helpers import batchify_obs, batchify, unbatchify
+from batch_helpers import batchify_obs, batchify, unbatchify, clip_actions
 from agents.jestel_agent import Agent
 from godot import make_env
 
@@ -168,6 +168,7 @@ if __name__ == "__main__":
                 # Get new action from the policy for this timestep
                 with torch.no_grad():
                     action, logprob, _, value = agent.get_action_and_value(next_obs)
+                    action = clip_actions(action)
                     values[step] = value.flatten()
                     actions[step] = action
                     logprobs[step] = logprob

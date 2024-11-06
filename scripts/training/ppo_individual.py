@@ -35,7 +35,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts
+from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts, clip_actions
 from agents.jestel_agent import Agent
 from godot import make_env
 
@@ -170,7 +170,7 @@ if __name__ == "__main__":
                     for idx, agent in enumerate(agents):
                         action, logprob, _, value = agent.get_action_and_value(next_obs[idx].unsqueeze(0))
                         new_values = torch.cat((new_values, value.flatten()))
-                        new_actions = torch.cat((new_actions, action))
+                        new_actions = torch.cat((new_actions, clip_actions(action)))
                         new_logprobs = torch.cat((new_logprobs, logprob))
                 values[step] = new_values
                 actions[step] = new_actions
