@@ -22,7 +22,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts
+from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts, clip_actions
 from agents.jestel_agent import Agent
 from godot import make_env
 
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     total_episodic_reward = 0
     global_step = 0
-    next_obs = batchify_obs(env.reset()[0], device)
+    next_obs = batchify_obs(env.reset()[0], device, Agent)
     episode_count = 0
     episodic_rewards = []
     while episode_count < args.eval_episodes:
@@ -74,11 +74,11 @@ if __name__ == "__main__":
         with torch.no_grad():
             for idx, agent in enumerate(agents):
                 action, _, _, _ = agent.get_action_and_value(next_obs[idx].unsqueeze(0))
-                actions = torch.cat((actions, action))
+                actions = torch.cat((actions, clip_actions(action)))
 
-        next_obs_unbatched, reward, next_done, infos = env.step(unbatchify(actions, env))
+        next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(actions, env))
 
-        next_obs = batchify_obs(next_obs_unbatched, device)
+        next_obs = batchify_obs(next_obs_unbatched, device, Agent)
         next_done = batchify(next_done, device).long()
 
         total_episodic_reward += batchify(reward, device).view(-1)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
                 episodic_rewards.append(agent_reward)
             print(episodic_msg)
 
-            next_obs = batchify_obs(env.reset()[0], device)
+            next_obs = batchify_obs(env.reset()[0], device, Agent)
             total_episodic_reward = 0
             episode_count += 1
     

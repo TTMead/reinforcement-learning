@@ -19,7 +19,7 @@ def batchify_obs(obs, device, Agent):
 def batchify(x, device):
     """Converts dict style returns and dones to batch of torch arrays."""
     x = np.stack([x[a] for a in x], axis=0) # convert to list of np arrays
-    x = torch.tensor(x).to(device)
+    x = torch.tensor(x, dtype=torch.float32).to(device)
     return x
 
 
