@@ -9,36 +9,37 @@ prohibited. Offenders will be held liable for the payment of damages.
 """
 
 '''
-Trains a single PPO agent using a Unity3D environment passed through a
-Gymnasium wrapper.
+Trains a team of PPO agents in a pettingzoo style environment.
+
+Utilises the 'shared network' approach where during a rollout a single policy is
+utilised across all the agents and the trajectories are all combined to
+train/update the policy weights.
 
 Branched from CleanRL ppo_continuous_action.py at https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py
 '''
 
 import os
 import random
+import traceback
 import time
-from dataclasses import dataclass
-from typing import Optional
-
-import gymnasium as gym
-import numpy as np
+import timeit
 import torch
+import tyro
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-import tyro
+from dataclasses import dataclass
+from typing import Optional
 from torch.utils.tensorboard import SummaryWriter
-
-from mlagents_envs.environment import UnityEnvironment
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from unity_gymnasium_env import UnityToGymWrapper
-from normalize import MinMaxNormalizeObservation
 
 import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from batch_helpers import batchify_obs, batchify, unbatchify, clip_actions
 from agents.jestel_agent import Agent
+from godot import make_env
+
 
 @dataclass
 class Args:
@@ -50,33 +51,21 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: Optional[str] = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder). Does nothing if env_id='unity'."""
     time_scale: float = 20.0
-    """for Unity environments, sets the simulator timescale"""
+    """sets the simulator timescale"""
     model_path: Optional[str] = None
     """if a path is provided, will initialise the agent with the weights/biases of the model"""
 
     # Algorithm specific arguments
-    env_id: str = "unity"
-    """the id of the gym environment, if set to 'unity' will attempt to connect to a Unity application over a default network port"""
     file_path: Optional[str] = None
-    """if a path is provided, will use the provided compiled Unity executable"""
+    """if a path is provided, will use the provided compiled executable"""
     no_graphics: bool = False
-    """disables graphics from Unity3D environments"""
-    total_timesteps: int = 100000
+    """disables graphics for compiled environments"""
+    total_timesteps: int = 2000000
     """total timesteps of the experiments"""
-    learning_rate: float = 3e-4
+    learning_rate: float = 3e-5
     """the learning rate of the optimizer"""
-    num_envs: int = 1
-    """the number of parallel game environments"""
-    num_steps: int = 4096
+    num_steps: int = 8192
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -108,67 +97,20 @@ class Args:
     """the batch size (computed in runtime)"""
     minibatch_size: int = 0
     """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
-
-def make_unity_env(editor_timescale, file_path, no_graphics) -> UnityEnvironment:
-    config_channel = EngineConfigurationChannel()
-    if (not file_path):
-        print("Waiting for Unity Editor on port " + str(UnityEnvironment.DEFAULT_EDITOR_PORT) + ". Press Play button now.")
-    env = UnityEnvironment(seed=1, file_name=file_path, side_channels=[config_channel], no_graphics=no_graphics)
-    config_channel.set_configuration_parameters(time_scale=editor_timescale)
-    env.reset()
-    return env
-
-def make_env(env_id, idx, capture_video, run_name, time_scale, gamma, file_path, no_graphics):
-    def thunk():
-        if (env_id == "unity"):
-            unity_env = make_unity_env(time_scale, file_path, no_graphics)
-            env = UnityToGymWrapper(unity_env, uint8_visual=False, flatten_branched=False, allow_multiple_obs=False)
-        else:
-            if capture_video and idx == 0:
-                env = gym.make(env_id, render_mode="rgb_array")
-                env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-            else:
-                env = gym.make(env_id)
-        env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = MinMaxNormalizeObservation(env, Agent.get_observation_range())
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        return env
-
-    return thunk
-
+    num_updates: int = 0
+    """the number of times the policy will update (computed in runtime)"""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    args.batch_size = int(args.num_envs * args.num_steps)
-    args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    args.num_iterations = args.total_timesteps // args.batch_size
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
-    if args.track:
-        import wandb
-
-        wandb.init(
-            project=args.wandb_project_name,
-            entity=args.wandb_entity,
-            sync_tensorboard=True,
-            config=vars(args),
-            name=run_name,
-            monitor_gym=True,
-            save_code=True,
-        )
+    run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
 
-    # TRY NOT TO MODIFY: seeding
+    # Seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -176,68 +118,86 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.time_scale, args.gamma, args.file_path, args.no_graphics) for i in range(args.num_envs)]
-    )
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+    env = make_env(args.time_scale, args.file_path, args.no_graphics, args.seed)
+    action_space = env.action_space(env.possible_agents[0])[0]
+    observation_space = env.observation_space(env.possible_agents[0])["obs"]
 
-    agent = Agent(envs.single_observation_space, envs.single_action_space).to(device)
+    agent = Agent(observation_space, action_space).to(device)
     if (args.model_path):
         print("Loading pre-existing model from [" + args.model_path + "]")
-        agent.load_state_dict(torch.load(args.model_path, map_location=device))
+        agent.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
 
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    num_agents = len(env.possible_agents)
+    obs = torch.zeros((args.num_steps, num_agents) + observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, num_agents) + action_space.shape).to(device)
+    logprobs = torch.zeros((args.num_steps, num_agents)).to(device)
+    rewards = torch.zeros((args.num_steps, num_agents)).to(device)
+    dones = torch.zeros((args.num_steps, num_agents)).to(device)
+    values = torch.zeros((args.num_steps, num_agents)).to(device)
 
-    # TRY NOT TO MODIFY: start the game
+    # Derived arguments
+    args.batch_size = int(num_agents * args.num_steps)
+    args.minibatch_size = int(args.batch_size // args.num_minibatches)
+    args.num_updates = args.total_timesteps // args.batch_size
+
+    # Start the game
     global_step = 0
+    episode_start_step = 0
+    total_episodic_reward = 0
     start_time = time.time()
-    next_obs, _ = envs.reset(seed=args.seed)
-    next_obs = torch.Tensor(next_obs).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
+    next_obs = batchify_obs(env.reset()[0], device, Agent)
+    next_done = torch.zeros(num_agents).to(device)
 
     try:
-        for iteration in range(1, args.num_iterations + 1):
+        for update in range(1, args.num_updates + 1):
             # Annealing the rate if instructed to do so.
             if args.anneal_lr:
-                frac = 1.0 - (iteration - 1.0) / args.num_iterations
+                frac = 1.0 - (update - 1.0) / args.num_updates
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
 
             for step in range(0, args.num_steps):
-                global_step += args.num_envs
+                global_step += 1
+
                 obs[step] = next_obs
                 dones[step] = next_done
 
-                # ALGO LOGIC: action logic
+                # Get new action from the policy for this timestep
                 with torch.no_grad():
                     action, logprob, _, value = agent.get_action_and_value(next_obs)
+                    action = clip_actions(action)
                     values[step] = value.flatten()
-                actions[step] = action
-                logprobs[step] = logprob
+                    actions[step] = action
+                    logprobs[step] = logprob
 
-                # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-                next_done = np.logical_or(terminations, truncations)
-                rewards[step] = torch.tensor(reward).to(device).view(-1)
-                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+                # Step the environment with the policy's chosen actions
+                next_obs_unbatched, reward, next_done, _, infos = env.step(unbatchify(action, env))
 
-                if "final_info" in infos:
-                    for info in infos["final_info"]:
-                        if info and "episode" in info:
-                            print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                            writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                            writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                next_obs = batchify_obs(next_obs_unbatched, device, Agent)
+                next_done = batchify(next_done, device).long()
+
+                rewards[step] = batchify(reward, device).view(-1)
+                total_episodic_reward += rewards[step]
+
+                # Check for episode completion
+                if (torch.prod(next_done) == 1):
+                    episodic_msg = "global_step=" + str(global_step) + ", episodic_return=|"
+                    for agent_index, agent_reward in enumerate(total_episodic_reward):
+                        episodic_msg = episodic_msg + "{:.2f}".format(agent_reward.item()) + "|"
+                        writer.add_scalar("charts/episodic_return(" + str(agent_index) + ")", agent_reward, global_step)
+                    writer.add_scalar("charts/mean_episodic_return", torch.mean(total_episodic_reward), global_step)
+                    writer.add_scalar("charts/episodic_length", (global_step - episode_start_step), global_step)
+                    print(episodic_msg)
+
+                    next_obs = batchify_obs(env.reset()[0], device, Agent)
+                    total_episodic_reward = 0
+                    episode_start_step = global_step
 
             # bootstrap value if not done
+            optimization_start_time = timeit.default_timer()
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
@@ -254,9 +214,9 @@ if __name__ == "__main__":
                 returns = advantages + values
 
             # flatten the batch
-            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+            b_obs = obs.reshape((-1,) + observation_space.shape)
             b_logprobs = logprobs.reshape(-1)
-            b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+            b_actions = actions.reshape((-1,) + action_space.shape)
             b_advantages = advantages.reshape(-1)
             b_returns = returns.reshape(-1)
             b_values = values.reshape(-1)
@@ -274,6 +234,7 @@ if __name__ == "__main__":
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
+                    # Calculate training metrics for debugging
                     with torch.no_grad():
                         # calculate approx_kl http://joschu.net/blog/kl-approx.html
                         old_approx_kl = (-logratio).mean()
@@ -319,7 +280,6 @@ if __name__ == "__main__":
             var_y = np.var(y_true)
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-            # TRY NOT TO MODIFY: record rewards for plotting purposes
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
             writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
             writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
@@ -328,29 +288,15 @@ if __name__ == "__main__":
             writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
             writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
             writer.add_scalar("losses/explained_variance", explained_var, global_step)
-            print("SPS:", int(global_step / (time.time() - start_time)))
+            print("SPS:", int(global_step / (time.time() - start_time)), ", Optimization: {:0.2e}s".format(timeit.default_timer() - optimization_start_time))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-    except KeyboardInterrupt:
+    except:
+        print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
-
-    envs.close()
 
     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
     torch.save(agent.state_dict(), model_path)
     print(f"\nModel saved to {model_path}")
 
-    import pickle 
-    metadata_path = f"runs/{run_name}/env_metadata.pkl"
-    with open(metadata_path, 'wb') as metadata_file:
-        pickle.dump(envs.metadata, metadata_file)
-
-    import json, dataclasses
-    metadata_path = f"runs/{run_name}/env_metadata.json"
-    json_path = f"runs/{run_name}/args.json"
-    with open(json_path, 'w', encoding='utf-8') as file:
-        json.dump(dataclasses.asdict(args), file, ensure_ascii=False, indent=4)
-
-    with open(metadata_path, 'w', encoding='utf-8') as file:
-        json.dump(envs.metadata, file, ensure_ascii=False, indent=4)
-
+    env.close()
     writer.close()
