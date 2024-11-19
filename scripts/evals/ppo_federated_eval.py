@@ -57,7 +57,7 @@ if __name__ == "__main__":
     print("Loading pre-existing models inside directory [" + args.model_path + "].")
 
     model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
-    assert (len(model_paths) == len(agents)), "Found " + str(len(model_paths)) + " agent models but require " + str(len(agents)) + " for this environment."
+    assert (len(model_paths) > len(agents)), "Found " + str(len(model_paths)) + " agent models but require atleast " + str(len(agents)) + " for this environment."
 
     for model_path, agent in zip(model_paths, agents):
         agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
