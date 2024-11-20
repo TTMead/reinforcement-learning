@@ -14,7 +14,6 @@ Branched from CleanRL ppo_eval.py at https://github.com/vwxyzjn/cleanrl/blob/mas
 
 import tyro
 import torch
-import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 
@@ -22,7 +21,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts, clip_actions
+from batch_helpers import batchify_obs, batchify, unbatchify, clip_actions
 from agents.jestel_agent import Agent
 from godot import make_env
 
@@ -57,7 +56,7 @@ if __name__ == "__main__":
     print("Loading pre-existing models inside directory [" + args.model_path + "].")
 
     model_paths = [(args.model_path + file) for file in os.listdir(args.model_path) if file.endswith('.cleanrl_model')]
-    assert (len(model_paths) > len(agents)), "Found " + str(len(model_paths)) + " agent models but require atleast " + str(len(agents)) + " for this environment."
+    assert (len(model_paths) >= len(agents)), "Found " + str(len(model_paths)) + " agent models but require atleast " + str(len(agents)) + " for this environment."
 
     for model_path, agent in zip(model_paths, agents):
         agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
