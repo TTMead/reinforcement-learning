@@ -35,7 +35,7 @@ import sys, os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts, clip_actions
+from batch_helpers import batchify_obs, batchify, unbatchify, load_state_dicts, clip_actions, save_models
 from agents.jestel_agent import Agent
 from godot import make_env
 
@@ -54,6 +54,8 @@ class Args:
     """sets the simulator timescale"""
     model_path: Optional[str] = None
     """if a path is provided, will initialise the agent with the weights/biases of the model"""
+    save_period: int = 100000
+    """The number of timesteps between backup saves."""
 
     # Algorithm specific arguments
     file_path: Optional[str] = None
@@ -144,6 +146,7 @@ if __name__ == "__main__":
     global_step = 0
     episode_start_step = 0
     total_episodic_reward = 0
+    num_model_saves = 1
     start_time = time.time()
     next_obs = batchify_obs(env.reset()[0], device, Agent)
     next_done = torch.zeros(num_agents).to(device)
@@ -294,14 +297,15 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/explained_variance(" + str(idx) + ")", explained_var, global_step)
             print("SPS:", int(global_step / (time.time() - start_time)), ", Optimization: {:0.2e}s".format(timeit.default_timer() - optimization_start_time))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+            if (global_step > (num_model_saves * args.save_period)):
+                save_models(agents, run_name, args.exp_name + "_" + str(num_model_saves))
+                num_model_saves += 1
     except:
         print("Cancelling training run early due to exception:", traceback.print_exc(), "\n")
         pass
 
-    for idx, agent in enumerate(agents):
-        model_path = f"runs/{run_name}/{args.exp_name}{idx}.cleanrl_model"
-        torch.save(agent.state_dict(), model_path)
-    print(f"\nModels saved to {model_path}")
+    save_models(agents, run_name, args.exp_name)
 
     env.close()
     writer.close()

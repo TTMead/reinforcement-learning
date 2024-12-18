@@ -51,3 +51,18 @@ def load_state_dicts(model_path, agents, device):
             print("Loading pre-existing model [" + model_path + "]")
             for agent in agents:
                 agent.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+
+
+def save_model(agent, run_name, exp_name):
+    model_path = f"runs/{run_name}/{exp_name}.cleanrl_model"
+    torch.save(agent.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
+
+
+def save_models(agents, run_name, exp_name):
+    file_path = f"runs/{run_name}/{exp_name}"
+    os.makedirs(file_path)
+    for idx, agent in enumerate(agents):
+        model_path = os.path.join(file_path, exp_name + "_" + str(idx) + ".cleanrl_model")
+        torch.save(agent.state_dict(), model_path)
+    print(f"Model saved to {file_path}")
